@@ -360,7 +360,7 @@ describe('AdminDashboardPage', () => {
   });
 
   it('con PIN de caja activado exige PIN antes de ingresar a Control de caja', async () => {
-    vi.mocked(storeConfigService.fetchStoreConfig).mockResolvedValueOnce({
+    vi.mocked(storeConfigService.fetchStoreConfig).mockResolvedValue({
       id: 1,
       store_name: 'RestoIT',
       address: '',
