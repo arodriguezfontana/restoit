@@ -31,6 +31,17 @@ class StoreConfig(Base):
     menu_link: Mapped[str | None] = mapped_column(Text, nullable=True)
     promotions_link: Mapped[str | None] = mapped_column(Text, nullable=True)
     mp_alias: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Medios de pago que acepta el local.
+    accepts_cash: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    accepts_transfer: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    # Datos de cobro de la transferencia: alias o CBU, y el titular de la cuenta.
+    transfer_alias: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    transfer_cbu: Mapped[str | None] = mapped_column(String(22), nullable=True)
+    transfer_holder: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    accepts_card: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    # A qué pedidos se cobra con tarjeta: "pickup" (retiro), "delivery" (envío) o "both" (los dos).
+    card_applies_to: Mapped[str] = mapped_column(String(10), nullable=False, default="both", server_default="both")
+    accepts_mercadopago: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     # Seguridad de caja mediante PIN (opcional)
     cash_pin_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     cash_pin: Mapped[str | None] = mapped_column(String(10), nullable=True)

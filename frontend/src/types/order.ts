@@ -49,12 +49,8 @@ export const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = {
   mercadopago: 'MercadoPago',
 };
 
-/** Medios que se ofrecen al tomar un pedido en el mostrador. */
-export const COUNTER_PAYMENT_METHODS: PaymentMethod[] = ['efectivo', 'mercadopago'];
-
-/** Medios con los que el cliente puede pagar un pedido hecho desde la web. */
-export type WebPaymentMethod = Extract<PaymentMethod, 'efectivo' | 'mercadopago'>;
-export const WEB_PAYMENT_METHODS: WebPaymentMethod[] = ['efectivo', 'mercadopago'];
+/** Medios con los que se puede pagar un pedido hecho desde la web (los habilita el local en su configuración). */
+export type WebPaymentMethod = PaymentMethod;
 
 export interface CheckoutFormData {
   name: string;

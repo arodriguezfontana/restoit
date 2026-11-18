@@ -8,7 +8,6 @@ from app.schemas.common import PHONE_PATTERN
 from app.services.order_service import CounterPayment, OrderRequest
 
 MAX_ITEMS_PER_ORDER = 30
-WEB_PAYMENT_METHODS = (PaymentMethod.CASH, PaymentMethod.MERCADOPAGO)
 
 
 class OrderResponse(BaseModel):
@@ -224,17 +223,11 @@ class _OrderCreate(BaseModel):
 class WebOrderCreate(_OrderCreate):
     """Pedido generado desde la web del cliente.
 
-    Solo se ofrece efectivo (al recibir o retirar) o MercadoPago (se paga online al confirmar). Si el pago
+    El medio de pago tiene que estar habilitado en la configuración del local (se verifica al registrarlo). Si el pago
     ya se hizo lo decide el sistema, nunca el cliente: un pedido web siempre arranca sin abonar.
     """
 
     payment_method: PaymentMethod = PaymentMethod.CASH
-
-    @model_validator(mode="after")
-    def _web_payment_methods(self) -> "WebOrderCreate":
-        if self.payment_method not in WEB_PAYMENT_METHODS:
-            raise ValueError("En la web se puede pagar solo en efectivo o con MercadoPago.")
-        return self
 
 
 class CounterOrderCreate(_OrderCreate):

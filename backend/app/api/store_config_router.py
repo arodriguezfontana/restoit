@@ -2,12 +2,20 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin, get_optional_current_user
+from app.core.payments import mercadopago_configured
 from app.db.session import get_db
+from app.models.store_config import StoreConfig
 from app.models.user import User
 from app.schemas.store_config_schemas import StoreConfigResponse, StoreConfigUpdate
 from app.services.store_config_service import get_or_create_store_config, update_store_config
 
 router = APIRouter()
+
+
+def _response(config: StoreConfig) -> StoreConfigResponse:
+    res = StoreConfigResponse.model_validate(config)
+    res.mercadopago_available = mercadopago_configured()
+    return res
 
 
 @router.get("")
@@ -17,7 +25,7 @@ def get_store_config_endpoint(
 ) -> StoreConfigResponse:
     """Configuración pública del local (identidad visual y datos de contacto)."""
     config = get_or_create_store_config(db)
-    res = StoreConfigResponse.model_validate(config)
+    res = _response(config)
     if not (current_user and current_user.is_admin):
         res.cash_pin = None
     return res
@@ -29,4 +37,4 @@ def update_store_config_endpoint(
     db: Session = Depends(get_db),
 ) -> StoreConfigResponse:
     """Actualiza la identidad y diseño del local (exclusivo para administradores)."""
-    return StoreConfigResponse.model_validate(update_store_config(db, payload))
+    return _response(update_store_config(db, payload))

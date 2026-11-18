@@ -52,6 +52,7 @@ from app.services.modifier_nlp import (
     vincular_modificadores_con_db,
 )
 from app.services.order_service import OrderRequest, ScheduleTooEarlyError, create_bot_order, validate_schedule
+from app.services.payment_methods_service import PAYMENT_LABELS, accepted_payment_methods, transfer_instructions
 
 logger = logging.getLogger(__name__)
 
@@ -94,12 +95,16 @@ _ACLARACION_MODIFICACIONES = (
 
 
 def normalizar_metodo_pago(metodo: str | None) -> str | None:
-    """Medio de pago ('mercadopago' o 'efectivo') al que se refiere el texto, o None si no es reconocible."""
+    """Medio de pago ('efectivo', 'transferencia', 'tarjeta' o 'mercadopago') al que se refiere el texto, o None si no es reconocible."""
     if not metodo:
         return None
     texto = sin_acentos(str(metodo).strip().lower())
     if any(k in texto for k in ("mercado", "mp", "link", "digital")):
         return PaymentMethod.MERCADOPAGO.value
+    if any(k in texto for k in ("transfer", "cbu", "cvu", "alias")):
+        return PaymentMethod.TRANSFER.value
+    if any(k in texto for k in ("tarjeta", "debito", "credito", "card", "posnet")):
+        return PaymentMethod.CARD.value
     if any(k in texto for k in ("efectivo", "cash", "pesos")):
         return PaymentMethod.CASH.value
     return None
@@ -847,6 +852,8 @@ class _DatosDeEntrega:
     horario: datetime | None
     observaciones: str | None
     metodo_pago: str | None
+    # Los medios que ofrece el local, en texto ("Efectivo y Tarjeta"), para preguntarle al cliente cómo paga.
+    opciones_pago: str = ""
 
     def lineas(self) -> list[str]:
         entrega = PICKUP_ADDRESS if self.es_retiro else f"Envío a domicilio: {self.direccion}"
@@ -864,10 +871,19 @@ class _DatosDeEntrega:
         if self.metodo_pago:
             # Con todos los datos, incluido el pago: es la única vez que se le pide confirmar.
             return "¿Está todo bien para confirmar el pedido?"
-        return '💳 ¿Cómo preferís pagar? Ofrecemos "Efectivo" y "MercadoPago".'
+        return f"💳 ¿Cómo preferís pagar? Ofrecemos {self.opciones_pago}."
 
     def _etiqueta_pago(self) -> str:
-        return "MercadoPago" if self.metodo_pago == PaymentMethod.MERCADOPAGO.value else "Efectivo"
+        return PAYMENT_LABELS[PaymentMethod(self.metodo_pago)]
+
+
+DELIVERY_VALUES = {metodo.value for metodo in DeliveryMethod}
+
+
+def _texto_de_opciones(opciones: list[PaymentMethod]) -> str:
+    """Los medios de pago en texto: 'Efectivo', 'Efectivo y Tarjeta' o 'Efectivo, Tarjeta y MercadoPago'."""
+    nombres = [f'"{PAYMENT_LABELS[metodo]}"' for metodo in opciones]
+    return " y ".join([", ".join(nombres[:-1]), nombres[-1]]) if len(nombres) > 1 else "".join(nombres)
 
 
 def _bloque_de_productos(resueltos: ItemsResueltos) -> list[str]:
@@ -985,7 +1001,8 @@ def calcular_y_preparar_pedido(
         observaciones: Aclaraciones del cliente sobre la comida o la entrega (ej: "sin cebolla",
             "timbre 2B", "paga con $20000"). Incluí cualquier aclaración de este tipo que el cliente
             haya mencionado en cualquier momento de la conversación, aunque no se la hayas preguntado.
-        metodo_pago: "efectivo" o "mercadopago". Si el cliente indicó cómo desea abonar, pasalo acá.
+        metodo_pago: "efectivo", "transferencia", "tarjeta" o "mercadopago" (solo los que ofrece el local). Si el
+            cliente indicó cómo desea abonar, pasalo acá.
     """
     db = SessionLocal()
     try:
@@ -999,6 +1016,12 @@ def calcular_y_preparar_pedido(
         es_retiro = metodo_entrega == DeliveryMethod.PICKUP
         faltantes = _datos_faltantes(resueltos, metodo_entrega, nombre, telefono, not es_retiro and not direccion)
         horario, aviso_horario = _evaluar_hora_programada(db, hora_programada, dia_programado)
+        metodo = normalizar_metodo_pago(metodo_pago)
+        opciones = accepted_payment_methods(db, metodo_entrega if metodo_entrega in DELIVERY_VALUES else None)
+        aviso_pago = None
+        if metodo and PaymentMethod(metodo) not in opciones:
+            aviso_pago = f"El local no acepta {PAYMENT_LABELS[PaymentMethod(metodo)]} para este pedido."
+            metodo = None
         entrega = _DatosDeEntrega(
             cliente=nombre,
             telefono=telefono,
@@ -1006,10 +1029,13 @@ def calcular_y_preparar_pedido(
             direccion=direccion,
             horario=horario,
             observaciones=_limpiar_observaciones(observaciones),
-            metodo_pago=normalizar_metodo_pago(metodo_pago),
+            metodo_pago=metodo,
+            opciones_pago=_texto_de_opciones(opciones),
         )
         datos_temporales = _datos_temporales(resueltos, entrega, metodo_entrega, faltantes, aviso_horario)
         mensaje = _mensaje_para_el_cliente(resueltos, faltantes, aviso_horario, entrega)
+        if aviso_pago:
+            mensaje = "\n\n".join([aviso_pago, mensaje])
         return json.dumps({"mensaje_para_usuario": mensaje, "datos_temporales": datos_temporales}, ensure_ascii=False)
     except Exception as e:
         logger.exception("Error procesando el cálculo del pedido. items_solicitados=%s", items_solicitados)
@@ -1038,14 +1064,19 @@ def _telefono_confirmado(datos: dict, canal: Channel | None, chat_id: str | None
     return str(datos.get("telefono") or datos.get("customer_phone") or "").strip()[:MAX_LARGO_TELEFONO]
 
 
-def _mensaje_pedido_registrado(cliente: str, programado: datetime | None, metodo_pago: str) -> str:
+def _detalle_de_pago(db: Session, metodo_pago: str) -> str:
+    if metodo_pago == PaymentMethod.MERCADOPAGO.value:
+        # El link de MercadoPago se manda recién cuando el local acepta el pedido (ver start_chat_payment).
+        return "MercadoPago (te pasamos el link de pago cuando el local acepte tu pedido)"
+    if metodo_pago == PaymentMethod.TRANSFER.value:
+        return f"Transferencia ({transfer_instructions(db)})"
+    if metodo_pago == PaymentMethod.CARD.value:
+        return "Tarjeta (abonás al recibir o retirar tu pedido)"
+    return "Efectivo (abonás al recibir o retirar tu pedido)"
+
+
+def _mensaje_pedido_registrado(cliente: str, programado: datetime | None, detalle_pago: str) -> str:
     horario = f" {describir_horario_programado(programado, ahora_local())}" if programado else ""
-    # El link de MercadoPago se manda recién cuando el local acepta el pedido (ver start_chat_payment).
-    detalle_pago = (
-        "MercadoPago (te pasamos el link de pago cuando el local acepte tu pedido)"
-        if metodo_pago == PaymentMethod.MERCADOPAGO.value
-        else "Efectivo (abonás al recibir o retirar tu pedido)"
-    )
     return (
         f"¡Listo, {cliente}! 🙌 {MARCA_PEDIDO_REGISTRADO}{horario}.\n\n"
         f"Método de pago: {detalle_pago}.\n\n"
@@ -1101,7 +1132,7 @@ def _registrar_pedido_confirmado(db: Session, datos: dict, canal: Channel | None
         )
     except InvalidOrderError as exc:
         return f"El pedido NO se registró todavía. {exc}"
-    return _mensaje_pedido_registrado(cliente, programado, metodo_pago)
+    return _mensaje_pedido_registrado(cliente, programado, _detalle_de_pago(db, metodo_pago))
 
 
 @tool

@@ -1,28 +1,17 @@
+import { useEffect } from 'react';
 import { CashPinSection } from '@/components/configuracion/CashPinSection';
 import { LoginBackgroundSection } from '@/components/configuracion/LoginBackgroundSection';
 import { LogoSection } from '@/components/configuracion/LogoSection';
+import { PaymentMethodsSection } from '@/components/configuracion/PaymentMethodsSection';
 import { PanelBackgroundSection } from '@/components/configuracion/PanelBackgroundSection';
 import { StoreDataSection } from '@/components/configuracion/StoreDataSection';
 import { StorePreviewSection } from '@/components/configuracion/StorePreviewSection';
 import { ThemeColorSection } from '@/components/configuracion/ThemeColorSection';
+import { Toast } from '@/components/ui/Toast';
 import { PanelNote } from '@/components/ui/PanelNote';
 import { useStoreSettingsForm } from '@/hooks/useStoreSettingsForm';
-import type { Feedback } from '@/hooks/useStoreSettingsForm';
 import { getThemeOption } from '@/types/storeConfig';
 import type { StoreConfig } from '@/types/storeConfig';
-
-function FeedbackBanner({ feedback, onClose }: { feedback: NonNullable<Feedback>; onClose: () => void }) {
-  const style =
-    feedback.type === 'success' ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200';
-  return (
-    <div role="alert" className={`p-4 rounded-xl text-sm font-medium flex items-center justify-between ${style}`}>
-      <span>{feedback.message}</span>
-      <button type="button" onClick={onClose} className="text-xs font-semibold underline ml-3 shrink-0">
-        Cerrar
-      </button>
-    </div>
-  );
-}
 
 interface ConfiguracionWebViewProps {
   onConfigUpdated?: (config: StoreConfig) => void;
@@ -31,6 +20,14 @@ interface ConfiguracionWebViewProps {
 export function ConfiguracionWebView({ onConfigUpdated }: ConfiguracionWebViewProps = {}) {
   const form = useStoreSettingsForm(onConfigUpdated);
   const currentTheme = getThemeOption(form.themeColor);
+  const { feedback, setFeedback } = form;
+
+  // El aviso aparece arriba a la derecha y se va solo (los errores quedan más tiempo para poder leerlos).
+  useEffect(() => {
+    if (!feedback) return;
+    const timer = setTimeout(() => setFeedback(null), feedback.type === 'error' ? 8000 : 5000);
+    return () => clearTimeout(timer);
+  }, [feedback, setFeedback]);
 
   if (form.loading) {
     return <PanelNote>Cargando configuración...</PanelNote>;
@@ -38,16 +35,15 @@ export function ConfiguracionWebView({ onConfigUpdated }: ConfiguracionWebViewPr
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-16">
+      <Toast message={feedback?.message ?? null} type={feedback?.type} onClose={() => setFeedback(null)} />
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-5 rounded-2xl shadow-xs border border-gray-100">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Configuración</h1>
           <p className="text-sm text-gray-500 mt-1">
-            Identidad visual, datos del local y seguridad.
+            Identidad visual, datos del local, medios de pago y seguridad.
           </p>
         </div>
       </div>
-
-      {form.feedback && <FeedbackBanner feedback={form.feedback} onClose={() => form.setFeedback(null)} />}
 
       <form onSubmit={form.handleSubmit} className="space-y-6">
         <StoreDataSection
@@ -94,6 +90,11 @@ export function ConfiguracionWebView({ onConfigUpdated }: ConfiguracionWebViewPr
           setPanelBgColor={form.setPanelBgColor}
           currentTheme={currentTheme}
           onError={(message) => form.setFeedback(message ? { type: 'error', message } : null)}
+        />
+        <PaymentMethodsSection
+          payments={form.payments}
+          setPayments={form.setPayments}
+          mercadopagoAvailable={form.mercadopagoAvailable}
         />
         <CashPinSection
           cashPinEnabled={form.cashPinEnabled}

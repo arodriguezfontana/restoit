@@ -1,12 +1,14 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.core.config import settings
+from app.core.payments import mercadopago_configured
 
 THEME_COLOR_PATTERN = r"^(black|red|blue|emerald|orange|#[0-9a-fA-F]{6})$"
 LOGIN_BG_PATTERN = r"^(bistro|kitchen|trattoria|custom)$"
 PANEL_BG_PATTERN = r"^(none|color|bistro|kitchen|trattoria|custom)$"
+CARD_APPLIES_TO_PATTERN = r"^(pickup|delivery|both)$"
 # Una imagen de fondo ya redimensionada por el navegador pesa bastante menos; esto solo evita abusos.
 LOGIN_BG_IMAGE_MAX_LENGTH = 4_000_000
 
@@ -26,6 +28,16 @@ class StoreConfigResponse(BaseModel):
     menu_link: str | None = None
     promotions_link: str | None = None
     mp_alias: str | None = None
+    accepts_cash: bool = True
+    accepts_transfer: bool = False
+    transfer_alias: str | None = None
+    transfer_cbu: str | None = None
+    transfer_holder: str | None = None
+    accepts_card: bool = False
+    card_applies_to: str = "both"
+    accepts_mercadopago: bool = False
+    # Si el sistema tiene credenciales de MercadoPago (sin ellas no se puede activar).
+    mercadopago_available: bool = False
     cash_pin_enabled: bool = False
     cash_pin: str | None = None
     created_at: datetime
@@ -62,8 +74,34 @@ class StoreConfigUpdate(BaseModel):
     menu_link: str | None = Field(None, description="Link externo a la carta o menú del local")
     promotions_link: str | None = Field(None, description="Link externo a las promociones del local")
     mp_alias: str | None = Field(None, max_length=100, description="Alias de Mercado Pago")
+    accepts_cash: bool = Field(True, description="Si el local cobra en efectivo")
+    accepts_transfer: bool = Field(False, description="Si el local cobra por transferencia")
+    transfer_alias: str | None = Field(None, max_length=100, description="Alias de la cuenta que cobra transferencias")
+    transfer_cbu: str | None = Field(None, max_length=22, description="CBU/CVU de la cuenta que cobra transferencias")
+    transfer_holder: str | None = Field(None, max_length=100, description="Titular de la cuenta que cobra transferencias")
+    accepts_card: bool = Field(False, description="Si el local cobra con tarjeta")
+    card_applies_to: str = Field("both", pattern=CARD_APPLIES_TO_PATTERN, description="Pedidos con tarjeta: retiro, envío o ambos")
+    accepts_mercadopago: bool = Field(False, description="Si el local cobra con MercadoPago")
     cash_pin_enabled: bool = Field(False, description="Si la caja exige PIN de 4 dígitos para ser operada")
     cash_pin: str | None = Field(None, pattern=r"^\d{4}$", description="PIN de 4 dígitos para control de caja")
+
+    @field_validator("transfer_alias", "transfer_cbu", "transfer_holder", mode="after")
+    @classmethod
+    def blank_to_none(cls, value: str | None) -> str | None:
+        return value or None
+
+    @model_validator(mode="after")
+    def validate_payment_methods(self) -> "StoreConfigUpdate":
+        if self.accepts_transfer:
+            if not (self.transfer_alias or self.transfer_cbu):
+                raise ValueError("Para aceptar transferencias hay que cargar el alias o el CBU.")
+            if not self.transfer_holder:
+                raise ValueError("Para aceptar transferencias hay que cargar el titular de la cuenta.")
+        if self.accepts_mercadopago and not mercadopago_configured():
+            raise ValueError("MercadoPago no se puede activar porque no hay credenciales configuradas.")
+        if not (self.accepts_cash or self.accepts_transfer or self.accepts_card or self.accepts_mercadopago):
+            raise ValueError("Tiene que haber al menos un medio de pago activo.")
+        return self
 
     @model_validator(mode="after")
     def custom_login_bg_requires_image(self) -> "StoreConfigUpdate":

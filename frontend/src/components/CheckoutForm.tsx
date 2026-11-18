@@ -8,7 +8,9 @@ import { createWebOrder } from '@/services/orderService';
 import { paymentHint, toWebOrderItem, validateCheckout } from '@/utils/checkout';
 import { getErrorMessage } from '@/utils/errors';
 import type { CustomerAuthMode } from '@/components/CustomerAuthModal';
-import { PAYMENT_METHOD_LABEL, WEB_PAYMENT_METHODS } from '@/types/order';
+import { PAYMENT_METHOD_LABEL } from '@/types/order';
+import { acceptedPaymentMethods, transferDetails } from '@/utils/paymentMethods';
+import { useStoreConfig } from '@/hooks/useStoreConfig';
 import type { CheckoutFormData, CheckoutFormErrors, DeliveryMethod, WebOrderCreated, WebPaymentMethod } from '@/types/order';
 
 const INPUT_CLASS =
@@ -114,10 +116,15 @@ export function CheckoutForm({
   const [deliveryMethod, setDeliveryMethod] = useState<DeliveryMethod>('domicilio');
   const [address, setAddress] = useState(profile?.address ?? '');
   const [notes, setNotes] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<WebPaymentMethod>('efectivo');
+  const { storeConfig } = useStoreConfig();
+  const [chosenPayment, setPaymentMethod] = useState<WebPaymentMethod>('efectivo');
   const [errors, setErrors] = useState<CheckoutFormErrors>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Solo los medios que el local habilitó (la tarjeta puede valer solo para retiro o para envío).
+  const paymentMethods = acceptedPaymentMethods(storeConfig, deliveryMethod);
+  const paymentMethod = paymentMethods.includes(chosenPayment) ? chosenPayment : paymentMethods[0];
 
   const handleSubmit = async (event: SubmitEvent) => {
     event.preventDefault();
@@ -220,7 +227,7 @@ export function CheckoutForm({
           <div>
             <span className="block text-sm font-medium text-gray-700 mb-1">Pago</span>
             <div role="radiogroup" aria-label="Medio de pago" className="flex rounded-xl border border-gray-300 overflow-hidden text-sm">
-              {WEB_PAYMENT_METHODS.map((method) => (
+              {paymentMethods.map((method) => (
                 <button
                   key={method}
                   type="button"
@@ -234,7 +241,7 @@ export function CheckoutForm({
                 </button>
               ))}
             </div>
-            <p className="text-xs text-gray-500 mt-1">{paymentHint(paymentMethod, deliveryMethod, total)}</p>
+            <p className="text-xs text-gray-500 mt-1">{paymentHint(paymentMethod, deliveryMethod, total, transferDetails(storeConfig))}</p>
           </div>
 
           {submitError && (

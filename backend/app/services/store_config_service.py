@@ -23,6 +23,14 @@ class StoreConfigChanges(Protocol):
     panel_bg_color: str | None
     cash_pin_enabled: bool
     cash_pin: str | None
+    accepts_cash: bool
+    accepts_transfer: bool
+    transfer_alias: str | None
+    transfer_cbu: str | None
+    transfer_holder: str | None
+    accepts_card: bool
+    card_applies_to: str
+    accepts_mercadopago: bool
 
 
 DEFAULT_STORE_CONFIG = {
@@ -67,6 +75,14 @@ def update_store_config(db: Session, data: StoreConfigChanges) -> StoreConfig:
         config.panel_bg_color = data.panel_bg_color
         config.cash_pin_enabled = data.cash_pin_enabled
         config.cash_pin = data.cash_pin if data.cash_pin_enabled else None
+        config.accepts_cash = data.accepts_cash
+        config.accepts_transfer = data.accepts_transfer
+        config.transfer_alias = data.transfer_alias if data.accepts_transfer else None
+        config.transfer_cbu = data.transfer_cbu if data.accepts_transfer else None
+        config.transfer_holder = data.transfer_holder if data.accepts_transfer else None
+        config.accepts_card = data.accepts_card
+        config.card_applies_to = data.card_applies_to
+        config.accepts_mercadopago = data.accepts_mercadopago
     db.refresh(config)
     return config
 

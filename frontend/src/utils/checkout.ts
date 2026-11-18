@@ -37,9 +37,18 @@ export function toWebOrderItem(item: CartItem): WebOrderItemPayload {
 }
 
 /** Aclaración bajo el medio de pago: cómo y cuándo se paga. */
-export function paymentHint(method: WebPaymentMethod, delivery: DeliveryMethod, total: number): string {
+export function paymentHint(
+  method: WebPaymentMethod,
+  delivery: DeliveryMethod,
+  total: number,
+  transferDetails = '',
+): string {
   if (method === 'mercadopago') {
     return `Al confirmar te llevamos a MercadoPago para pagar ${formatCurrency(total)} de forma segura.`;
   }
-  return delivery === 'domicilio' ? 'Pagás en efectivo al recibir el pedido.' : 'Pagás en efectivo al retirar el pedido.';
+  if (method === 'transferencia') {
+    return `Transferí ${formatCurrency(total)} y avisanos. ${transferDetails}`.trim();
+  }
+  const cuando = delivery === 'domicilio' ? 'al recibir' : 'al retirar';
+  return method === 'tarjeta' ? `Pagás con tarjeta ${cuando} el pedido.` : `Pagás en efectivo ${cuando} el pedido.`;
 }

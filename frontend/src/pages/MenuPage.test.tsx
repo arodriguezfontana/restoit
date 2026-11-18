@@ -95,6 +95,8 @@ beforeEach(() => {
     logo_url: null,
     theme_color: 'black',
     login_bg: 'bistro',
+    accepts_mercadopago: true,
+    mercadopago_available: true,
   });
   promotions.fetchAvailablePromotions.mockResolvedValue([]);
 });

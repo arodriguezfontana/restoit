@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, SubmitEvent } from 'react';
 import { fetchStoreConfig, updateStoreConfig } from '@/services/storeConfigService';
-import type { LoginBgOption, PanelBgOption, StoreConfig, ThemeColor } from '@/types/storeConfig';
+import type { CardAppliesTo, LoginBgOption, PanelBgOption, StoreConfig, ThemeColor } from '@/types/storeConfig';
 import { getErrorMessage } from '@/utils/errors';
 import { resizeImageToDataUrl } from '@/utils/images';
 import { applyThemeColor } from '@/utils/theme';
@@ -9,6 +9,43 @@ import { applyThemeColor } from '@/utils/theme';
 const MAX_LOGO_BYTES = 2 * 1024 * 1024;
 // La imagen de fondo se achica antes de guardarla, así que se acepta una foto pesada del celular.
 const MAX_BACKGROUND_BYTES = 15 * 1024 * 1024;
+
+/** Los medios de pago que acepta el local y sus datos de cobro. */
+export interface PaymentSettings {
+  acceptsCash: boolean;
+  acceptsTransfer: boolean;
+  transferAlias: string;
+  transferCbu: string;
+  transferHolder: string;
+  acceptsCard: boolean;
+  cardAppliesTo: CardAppliesTo;
+  acceptsMercadopago: boolean;
+}
+
+function paymentSettingsFrom(config: StoreConfig): PaymentSettings {
+  return {
+    acceptsCash: config.accepts_cash ?? true,
+    acceptsTransfer: Boolean(config.accepts_transfer),
+    transferAlias: config.transfer_alias || '',
+    transferCbu: config.transfer_cbu || '',
+    transferHolder: config.transfer_holder || '',
+    acceptsCard: Boolean(config.accepts_card),
+    cardAppliesTo: config.card_applies_to || 'both',
+    // Sin credenciales no se puede cobrar por MercadoPago, aunque haya quedado activado.
+    acceptsMercadopago: Boolean(config.accepts_mercadopago) && Boolean(config.mercadopago_available),
+  };
+}
+
+/** El primer problema de los medios de pago, o null si están bien (el servidor valida lo mismo). */
+function paymentsProblem(payments: PaymentSettings): string | null {
+  const { acceptsCash, acceptsTransfer, acceptsCard, acceptsMercadopago } = payments;
+  if (!(acceptsCash || acceptsTransfer || acceptsCard || acceptsMercadopago)) return 'Tiene que haber al menos un medio de pago activo.';
+  if (acceptsTransfer && !(payments.transferAlias.trim() || payments.transferCbu.trim())) {
+    return 'Para aceptar transferencias cargá el alias o el CBU.';
+  }
+  if (acceptsTransfer && !payments.transferHolder.trim()) return 'Para aceptar transferencias cargá el titular de la cuenta.';
+  return null;
+}
 
 export type Feedback = { type: 'success' | 'error'; message: string } | null;
 
@@ -26,6 +63,7 @@ function formValuesFrom(config: StoreConfig) {
     panelBgImage: config.panel_bg_image || null,
     panelBgColor: config.panel_bg_color || null,
     mpAlias: config.mp_alias || '',
+    payments: paymentSettingsFrom(config),
     cashPinEnabled: Boolean(config.cash_pin_enabled),
     cashPin: config.cash_pin || '',
   };
@@ -63,6 +101,8 @@ export function useStoreSettingsForm(onConfigUpdated?: (config: StoreConfig) => 
   const [panelBgImage, setPanelBgImage] = useState<string | null>(null);
   const [panelBgColor, setPanelBgColor] = useState<string | null>(null);
   const [mpAlias, setMpAlias] = useState('');
+  const [payments, setPayments] = useState<PaymentSettings>(() => paymentSettingsFrom({} as StoreConfig));
+  const [mercadopagoAvailable, setMercadopagoAvailable] = useState(false);
   const [cashPinEnabled, setCashPinEnabled] = useState(false);
   const [cashPin, setCashPin] = useState('');
 
@@ -83,6 +123,8 @@ export function useStoreSettingsForm(onConfigUpdated?: (config: StoreConfig) => 
     setPanelBgImage(values.panelBgImage);
     setPanelBgColor(values.panelBgColor);
     setMpAlias(values.mpAlias);
+    setPayments(values.payments);
+    setMercadopagoAvailable(Boolean(config.mercadopago_available));
     setCashPinEnabled(values.cashPinEnabled);
     setCashPin(values.cashPin);
     applyThemeColor(values.themeColor);
@@ -153,7 +195,7 @@ export function useStoreSettingsForm(onConfigUpdated?: (config: StoreConfig) => 
   const validationError = (): string | null => {
     if (!storeName.trim()) return 'El nombre del local es obligatorio.';
     if (cashPinEnabled && !/^\d{4}$/.test(cashPin)) return 'El PIN de caja debe tener exactamente 4 dígitos numéricos.';
-    return null;
+    return paymentsProblem(payments);
   };
 
   const handleSubmit = async (event: SubmitEvent) => {
@@ -179,6 +221,14 @@ export function useStoreSettingsForm(onConfigUpdated?: (config: StoreConfig) => 
         panel_bg_image: panelBgImage,
         panel_bg_color: panelBgColor,
         mp_alias: mpAlias.trim() || null,
+        accepts_cash: payments.acceptsCash,
+        accepts_transfer: payments.acceptsTransfer,
+        transfer_alias: payments.acceptsTransfer ? payments.transferAlias.trim() || null : null,
+        transfer_cbu: payments.acceptsTransfer ? payments.transferCbu.trim() || null : null,
+        transfer_holder: payments.acceptsTransfer ? payments.transferHolder.trim() || null : null,
+        accepts_card: payments.acceptsCard,
+        card_applies_to: payments.cardAppliesTo,
+        accepts_mercadopago: payments.acceptsMercadopago,
         cash_pin_enabled: cashPinEnabled,
         cash_pin: cashPinEnabled ? cashPin : null,
       });
@@ -216,6 +266,9 @@ export function useStoreSettingsForm(onConfigUpdated?: (config: StoreConfig) => 
     panelBgColor,
     setPanelBgColor,
     mpAlias,
+    payments,
+    setPayments,
+    mercadopagoAvailable,
     cashPinEnabled,
     setCashPinEnabled,
     cashPin,

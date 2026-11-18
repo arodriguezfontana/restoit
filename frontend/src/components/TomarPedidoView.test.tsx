@@ -6,6 +6,7 @@ import * as clientService from '@/services/clientService';
 import * as menuService from '@/services/menuService';
 import * as orderService from '@/services/orderService';
 import * as promotionService from '@/services/promotionService';
+import * as storeConfigService from '@/services/storeConfigService';
 import type { Promotion } from '@/types/promotion';
 import { COCA, FUGAZZETA, MUZZA } from '@/test/utils';
 
@@ -13,11 +14,15 @@ vi.mock('@/services/menuService');
 vi.mock('@/services/orderService');
 vi.mock('@/services/clientService');
 vi.mock('@/services/promotionService');
+vi.mock('@/services/storeConfigService');
 
 const menu = vi.mocked(menuService);
 const orders = vi.mocked(orderService);
 const clients = vi.mocked(clientService);
 const promos = vi.mocked(promotionService);
+const storeConfig = vi.mocked(storeConfigService);
+
+const STORE = { store_name: 'RestoIT', address: null, contact_phone: null, logo_url: null, theme_color: 'black' as const };
 
 const PROMO_COMBO: Promotion = {
   id: 88,
@@ -57,6 +62,13 @@ async function renderView() {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  storeConfig.fetchStoreConfig.mockResolvedValue({
+    ...STORE,
+    accepts_transfer: true,
+    accepts_card: true,
+    accepts_mercadopago: true,
+    mercadopago_available: true,
+  });
   menu.fetchMenuProducts.mockResolvedValue([MUZZA, FUGAZZETA, COCA]);
   clients.lookupClientByPhone.mockResolvedValue(null);
   promos.fetchAvailablePromotions.mockResolvedValue([]);
@@ -169,9 +181,12 @@ describe('TomarPedidoView', () => {
   it('un segundo clic en el método de pago lo deja sin especificar', async () => {
     const user = await renderView();
 
-    // Solo se ofrecen Efectivo y MercadoPago.
+    // Se ofrecen los medios que el local habilitó.
+    await screen.findByRole('radio', { name: 'Tarjeta' });
     expect(screen.getAllByRole('radio', { name: /Efectivo|MercadoPago|Transferencia|Tarjeta/ }).map((r) => r.textContent)).toEqual([
       'Efectivo',
+      'Transferencia',
+      'Tarjeta',
       'MercadoPago',
     ]);
 
@@ -179,6 +194,16 @@ describe('TomarPedidoView', () => {
     expect(screen.getByRole('radio', { name: 'MercadoPago' })).toHaveAttribute('aria-checked', 'true');
     await user.click(screen.getByRole('radio', { name: 'MercadoPago' }));
     expect(screen.getByRole('radio', { name: 'MercadoPago' })).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('solo ofrece los medios de pago que el local habilitó', async () => {
+    storeConfig.fetchStoreConfig.mockResolvedValue({ ...STORE, accepts_cash: false, accepts_transfer: true });
+    const user = await renderView();
+
+    await screen.findByRole('radio', { name: 'Transferencia' });
+    expect(screen.queryByRole('radio', { name: 'Efectivo' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('radio', { name: 'MercadoPago' })).not.toBeInTheDocument();
+    expect(user).toBeDefined();
   });
 
   it('autocompleta los datos de un cliente registrado y avisa si se modifican', async () => {

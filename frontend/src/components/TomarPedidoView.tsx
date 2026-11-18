@@ -7,6 +7,7 @@ import { ProductCatalog } from '@/components/mostrador/ProductCatalog';
 import { useAvailablePromotions } from '@/hooks/useAvailablePromotions';
 import { useClientLookup } from '@/hooks/useClientLookup';
 import { useMenuProducts } from '@/hooks/useMenuProducts';
+import { useStoreConfig } from '@/hooks/useStoreConfig';
 import { useOrderLines } from '@/hooks/useOrderLines';
 import { fetchCurrentCashShift } from '@/services/cashShiftService';
 import { createCounterOrder } from '@/services/orderService';
@@ -14,6 +15,7 @@ import type { DeliveryMethod, PaymentMethod } from '@/types/order';
 import { buildCounterOrderPayload, validateCounterOrder } from '@/utils/counterOrder';
 import type { CounterOrderErrors } from '@/utils/counterOrder';
 import { getErrorMessage } from '@/utils/errors';
+import { acceptedPaymentMethods } from '@/utils/paymentMethods';
 import { printErrorMessage } from '@/utils/printing';
 
 const CLOSED_CASH_MESSAGE =
@@ -83,7 +85,11 @@ export function TomarPedidoView() {
     clientLookup.reset();
   };
 
-  const form = { name, phone, deliveryMethod, address, notes, paymentMethod, isPaid };
+  const { storeConfig } = useStoreConfig();
+  const paymentMethods = acceptedPaymentMethods(storeConfig, deliveryMethod);
+  // Si el local deshabilitó el medio elegido (o no vale para este tipo de entrega), queda sin especificar.
+  const selectedPayment = paymentMethod && paymentMethods.includes(paymentMethod) ? paymentMethod : null;
+  const form = { name, phone, deliveryMethod, address, notes, paymentMethod: selectedPayment, isPaid };
 
   const handleConfirm = async (event: SubmitEvent) => {
     event.preventDefault();
@@ -186,7 +192,8 @@ export function TomarPedidoView() {
           total={order.total}
           units={order.units}
           itemsError={errors.items}
-          paymentMethod={paymentMethod}
+          paymentMethods={paymentMethods}
+          paymentMethod={selectedPayment}
           onPaymentMethodChange={setPaymentMethod}
           isPaid={isPaid}
           onPaidChange={setIsPaid}

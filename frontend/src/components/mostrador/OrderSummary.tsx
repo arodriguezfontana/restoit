@@ -1,4 +1,4 @@
-import { COUNTER_PAYMENT_METHODS, MAX_QUANTITY_PER_ITEM, PAYMENT_METHOD_LABEL } from '@/types/order';
+import { MAX_QUANTITY_PER_ITEM, PAYMENT_METHOD_LABEL } from '@/types/order';
 import type { CartItem, PaymentMethod } from '@/types/order';
 import { formatCurrency } from '@/utils/currency';
 import { orderLineKey } from '@/hooks/useOrderLines';
@@ -81,11 +81,13 @@ function SummaryLine({ line, onQuantityChange, onRemove }: SummaryLineProps) {
 }
 
 function PaymentSelector({
+  methods,
   method,
   isPaid,
   onMethodChange,
   onPaidChange,
 }: {
+  methods: PaymentMethod[];
   method: PaymentMethod | null;
   isPaid: boolean;
   onMethodChange: (method: PaymentMethod | null) => void;
@@ -94,7 +96,7 @@ function PaymentSelector({
   return (
     <div className="mt-3 pt-3 border-t border-gray-200 flex flex-wrap items-center gap-3">
       <div className="flex flex-1 min-w-48 rounded-xl border border-gray-300 overflow-hidden text-xs" role="radiogroup" aria-label="Método de pago">
-        {COUNTER_PAYMENT_METHODS.map((option) => (
+        {methods.map((option) => (
           <button
             key={option}
             type="button"
@@ -129,6 +131,8 @@ interface OrderSummaryProps {
   total: number;
   units: number;
   itemsError?: string;
+  /** Medios que el local tiene habilitados. */
+  paymentMethods: PaymentMethod[];
   paymentMethod: PaymentMethod | null;
   onPaymentMethodChange: (method: PaymentMethod | null) => void;
   isPaid: boolean;
@@ -186,6 +190,7 @@ export function OrderSummary(props: OrderSummaryProps) {
       {props.itemsError && <p className="text-xs text-red-600 mt-2">{props.itemsError}</p>}
 
       <PaymentSelector
+        methods={props.paymentMethods}
         method={props.paymentMethod}
         isPaid={props.isPaid}
         onMethodChange={props.onPaymentMethodChange}

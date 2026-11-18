@@ -3,6 +3,7 @@ import { PAYMENT_METHOD_LABEL } from '@/types/order';
 import type { CheckoutFormData, WebOrderCreated } from '@/types/order';
 import { formatCurrency } from '@/utils/currency';
 import { CheckIcon } from '@/components/Icons';
+import { useStoreConfig } from '@/hooks/useStoreConfig';
 
 export function OrderSuccess({
   order,
@@ -16,6 +17,8 @@ export function OrderSuccess({
   /** Aviso que reemplaza al de "pedido recibido" (por ejemplo, el estado del pago al volver de MercadoPago). */
   banner?: ReactNode;
 }) {
+  const { storeConfig } = useStoreConfig();
+  const transfer = form.paymentMethod === 'transferencia' ? storeConfig : null;
   return (
     <div className="bg-white rounded-2xl shadow-xl p-8 max-w-lg mx-auto">
       {banner ? (
@@ -35,6 +38,31 @@ export function OrderSuccess({
         <div className="rounded-xl bg-green-50 text-green-800 px-4 py-3 text-sm mb-6 flex items-center gap-2">
           <CheckIcon className="w-5 h-5 text-green-700 shrink-0" />
           <span>¡Recibimos tu pedido y ya lo estamos preparando!</span>
+        </div>
+      )}
+
+      {transfer && (transfer.transfer_alias || transfer.transfer_cbu || transfer.transfer_holder) && (
+        <div className="rounded-xl bg-gray-50 border border-gray-200 px-4 py-3 mb-6 space-y-2">
+          <p className="text-sm text-gray-700">
+            Transferí <span className="font-semibold">{formatCurrency(order.total_amount)}</span> a esta cuenta:
+          </p>
+          {transfer.transfer_alias && (
+            <p className="text-gray-900">
+              <span className="block text-xs font-medium text-gray-500">Alias</span>
+              <span className="text-xl font-bold break-all">{transfer.transfer_alias}</span>
+            </p>
+          )}
+          {transfer.transfer_holder && (
+            <p className="text-gray-900">
+              <span className="block text-xs font-medium text-gray-500">Titular</span>
+              <span className="text-xl font-bold">{transfer.transfer_holder}</span>
+            </p>
+          )}
+          {transfer.transfer_cbu && (
+            <p className="text-sm text-gray-700">
+              <span className="font-medium text-gray-900">CBU:</span> {transfer.transfer_cbu}
+            </p>
+          )}
         </div>
       )}
 
