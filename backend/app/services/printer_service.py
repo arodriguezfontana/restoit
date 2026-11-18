@@ -18,6 +18,7 @@ from app.models.order import DeliveryMethod, Order, PaymentMethod
 from app.models.printer import Printer
 from app.repositories import printer_repository
 from app.schemas.printer_schemas import PrinterConfigUpdate, PrintResult
+from app.services.payment_proof_service import current_proof, pays_by_transfer
 
 logger = logging.getLogger(__name__)
 
@@ -151,6 +152,8 @@ def build_ticket_lines(order: Order) -> list[tuple[str, str]]:
         lines.append(("normal", sep))
     lines.append(("bold", _row("TOTAL", _money(order.total_amount))))
     lines.append(("normal", f"Pago: {_payment_text(order)}"))
+    if pays_by_transfer(order):
+        lines.append(("normal", f"Comprobante: {'adjunto' if current_proof(order) else 'pendiente'}"))
     return lines
 
 

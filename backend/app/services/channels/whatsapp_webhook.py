@@ -11,6 +11,8 @@ class MensajeRecibido:
     # Cada mensaje trae texto o, si es un mensaje de voz, el id del audio en Meta.
     texto: str | None = None
     audio_id: str | None = None
+    # Foto o documento (PDF) que mandó el cliente: el comprobante de una transferencia.
+    archivo_id: str | None = None
 
 
 def _cambios(data: dict) -> list[dict]:
@@ -29,6 +31,9 @@ def _mensaje_recibido(mensaje: dict, nombres: dict) -> MensajeRecibido | None:
         return MensajeRecibido(**datos, texto=texto)
     if mensaje.get("type") == "audio" and audio_id:
         return MensajeRecibido(**datos, audio_id=audio_id)
+    archivo_id = (mensaje.get("image") or mensaje.get("document") or {}).get("id")
+    if mensaje.get("type") in ("image", "document") and archivo_id:
+        return MensajeRecibido(**datos, archivo_id=archivo_id)
     return None
 
 
@@ -42,7 +47,7 @@ def _mensajes_de_un_cambio(cambio: dict) -> list[MensajeRecibido]:
 
 
 def mensajes_recibidos(data: dict) -> list[MensajeRecibido]:
-    """Mensajes de texto y de voz recibidos en la notificación (lo demás, como imágenes o ubicaciones, se ignora)."""
+    """Mensajes de texto, de voz y archivos (fotos o PDF) recibidos en la notificación (lo demás se ignora)."""
     return [mensaje for cambio in _cambios(data) for mensaje in _mensajes_de_un_cambio(cambio)]
 
 

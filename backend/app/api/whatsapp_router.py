@@ -51,6 +51,9 @@ def _atender_mensaje_recibido(canal: object, mensaje: MensajeRecibido) -> None:
     elif mensaje.audio_id:
         # Se transcribe en segundo plano: Meta espera la confirmación enseguida.
         bot_service.recibir_audio(Channel.WHATSAPP, mensaje.telefono, mensaje.audio_id)
+    elif mensaje.archivo_id:
+        # La foto del cliente es el comprobante de su transferencia.
+        bot_service.recibir_comprobante(Channel.WHATSAPP, mensaje.telefono, mensaje.archivo_id)
 
 
 @router.post("/webhook")

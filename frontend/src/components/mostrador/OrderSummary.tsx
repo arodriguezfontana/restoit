@@ -1,3 +1,7 @@
+import { useState } from 'react';
+import { PROOF_ACCEPT } from '@/services/orderService';
+import { formatSize } from '@/utils/files';
+import { proofFileProblem } from '@/utils/paymentProof';
 import { MAX_QUANTITY_PER_ITEM, PAYMENT_METHOD_LABEL } from '@/types/order';
 import type { CartItem, PaymentMethod } from '@/types/order';
 import { formatCurrency } from '@/utils/currency';
@@ -80,14 +84,38 @@ function SummaryLine({ line, onQuantityChange, onRemove }: SummaryLineProps) {
   );
 }
 
+/** Comprobante de la transferencia: se puede adjuntar ahora o después, desde el detalle del pedido. */
+function ProofPicker({ file, onChange }: { file: File | null; onChange: (file: File | null) => void }) {
+  const [problem, setProblem] = useState<string | null>(null);
+  const handle = (selected: File | undefined) => {
+    const error = selected ? proofFileProblem(selected) : null;
+    setProblem(error);
+    onChange(selected && !error ? selected : null);
+  };
+  return (
+    <div className="basis-full text-xs space-y-1">
+      <label htmlFor="counter-proof" className="block font-medium text-gray-700">
+        Comprobante de la transferencia (opcional, también podés adjuntarlo después)
+      </label>
+      <input id="counter-proof" type="file" accept={PROOF_ACCEPT} onChange={(e) => handle(e.target.files?.[0])} className="block w-full text-xs" />
+      {file && <p className="text-gray-500">{file.name} · {formatSize(file.size)}</p>}
+      {problem && <p role="alert" className="text-red-600 font-semibold">{problem}</p>}
+    </div>
+  );
+}
+
 function PaymentSelector({
   methods,
+  proofFile,
+  onProofFileChange,
   method,
   isPaid,
   onMethodChange,
   onPaidChange,
 }: {
   methods: PaymentMethod[];
+  proofFile: File | null;
+  onProofFileChange: (file: File | null) => void;
   method: PaymentMethod | null;
   isPaid: boolean;
   onMethodChange: (method: PaymentMethod | null) => void;
@@ -113,15 +141,19 @@ function PaymentSelector({
           </button>
         ))}
       </div>
-      <label className="shrink-0 flex items-center gap-1.5 text-xs font-medium text-gray-700 cursor-pointer select-none">
-        <input
-          type="checkbox"
-          checked={isPaid}
-          onChange={(e) => onPaidChange(e.target.checked)}
-          className="w-4 h-4 accent-black"
-        />
-        Ya abonado
-      </label>
+      {/* Con MercadoPago el cobro lo confirma el sistema; en efectivo, tarjeta y transferencia lo registra el personal. */}
+      {method !== 'mercadopago' && (
+        <label className="shrink-0 flex items-center gap-1.5 text-xs font-medium text-gray-700 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={isPaid}
+            onChange={(e) => onPaidChange(e.target.checked)}
+            className="w-4 h-4 accent-black"
+          />
+          Ya abonado
+        </label>
+      )}
+      {method === 'transferencia' && <ProofPicker file={proofFile} onChange={onProofFileChange} />}
     </div>
   );
 }
@@ -133,6 +165,8 @@ interface OrderSummaryProps {
   itemsError?: string;
   /** Medios que el local tiene habilitados. */
   paymentMethods: PaymentMethod[];
+  proofFile: File | null;
+  onProofFileChange: (file: File | null) => void;
   paymentMethod: PaymentMethod | null;
   onPaymentMethodChange: (method: PaymentMethod | null) => void;
   isPaid: boolean;
@@ -191,6 +225,8 @@ export function OrderSummary(props: OrderSummaryProps) {
 
       <PaymentSelector
         methods={props.paymentMethods}
+        proofFile={props.proofFile}
+        onProofFileChange={props.onProofFileChange}
         method={props.paymentMethod}
         isPaid={props.isPaid}
         onMethodChange={props.onPaymentMethodChange}

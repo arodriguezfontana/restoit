@@ -5,11 +5,11 @@ import { useCart } from '@/hooks/useCart';
 import { useAuth } from '@/hooks/useAuth';
 import { redirectToCheckout } from '@/services/mercadopagoService';
 import { createWebOrder } from '@/services/orderService';
-import { paymentHint, toWebOrderItem, validateCheckout } from '@/utils/checkout';
+import { toWebOrderItem, validateCheckout } from '@/utils/checkout';
 import { getErrorMessage } from '@/utils/errors';
 import type { CustomerAuthMode } from '@/components/CustomerAuthModal';
 import { PAYMENT_METHOD_LABEL } from '@/types/order';
-import { acceptedPaymentMethods, transferDetails } from '@/utils/paymentMethods';
+import { acceptedPaymentMethods } from '@/utils/paymentMethods';
 import { useStoreConfig } from '@/hooks/useStoreConfig';
 import type { CheckoutFormData, CheckoutFormErrors, DeliveryMethod, WebOrderCreated, WebPaymentMethod } from '@/types/order';
 
@@ -107,7 +107,7 @@ export function CheckoutForm({
   onSubmitSuccess: (order: WebOrderCreated, form: CheckoutFormData) => void;
   onRequestAuth: (mode: CustomerAuthMode) => void;
 }) {
-  const { items, total } = useCart();
+  const { items } = useCart();
   const { user, isCustomer } = useAuth();
   const profile = isCustomer ? user : null;
 
@@ -219,9 +219,6 @@ export function CheckoutForm({
               placeholder="Ej: Sin cebolla, con extra queso, timbre 2B…"
               className={`${INPUT_CLASS} resize-none`}
             />
-            <p className="text-xs text-gray-500 mt-1">
-              Podés indicar exclusiones y extras en lenguaje natural (ej. &ldquo;Sin cebolla&rdquo;, &ldquo;Con extra queso&rdquo;).
-            </p>
           </div>
 
           <div>
@@ -241,7 +238,6 @@ export function CheckoutForm({
                 </button>
               ))}
             </div>
-            <p className="text-xs text-gray-500 mt-1">{paymentHint(paymentMethod, deliveryMethod, total, transferDetails(storeConfig))}</p>
           </div>
 
           {submitError && (

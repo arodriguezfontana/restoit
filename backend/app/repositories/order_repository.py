@@ -101,6 +101,25 @@ def latest_for_chat(db: Session, channel: str, chat_id: str) -> Order | None:
     )
 
 
+def latest_transfer_for_chat(db: Session, channel: str, chat_id: str) -> Order | None:
+    """Último pedido por transferencia del cliente de ese chat que todavía no está abonado."""
+    return (
+        db.query(Order)
+        .filter(
+            Order.channel == channel,
+            Order.chat_id == chat_id,
+            Order.is_paid.is_(False),
+            or_(
+                Order.payment_method == PaymentMethod.TRANSFER.value,
+                Order.balance_payment_method == PaymentMethod.TRANSFER.value,
+            ),
+            Order.status.not_in([OrderStatus.REJECTED.value, OrderStatus.CANCELLED.value]),
+        )
+        .order_by(Order.id.desc())
+        .first()
+    )
+
+
 def list_orders(
     db: Session,
     date_from: datetime | None,

@@ -94,19 +94,24 @@ _ACLARACION_MODIFICACIONES = (
 # --- Interpretación de textos sueltos ---------------------------------------------------------------------
 
 
+_PATRONES_DE_PAGO = (
+    (r"mercado|\bmp\b", PaymentMethod.MERCADOPAGO),
+    (r"transf|\bcbu\b|\bcvu\b|alias|home ?banking", PaymentMethod.TRANSFER),
+    (r"tarj|debit|credit|\bdeb\b|\bcred\b|\bcard\b|posnet|\bvisa\b|master", PaymentMethod.CARD),
+    (r"link|digital|\bqr\b", PaymentMethod.MERCADOPAGO),
+    (r"efectivo|cash|pesos|billete|contado", PaymentMethod.CASH),
+)
+
+
 def normalizar_metodo_pago(metodo: str | None) -> str | None:
     """Medio de pago ('efectivo', 'transferencia', 'tarjeta' o 'mercadopago') al que se refiere el texto, o None si no es reconocible."""
     if not metodo:
         return None
     texto = sin_acentos(str(metodo).strip().lower())
-    if any(k in texto for k in ("mercado", "mp", "link", "digital")):
-        return PaymentMethod.MERCADOPAGO.value
-    if any(k in texto for k in ("transfer", "cbu", "cvu", "alias")):
-        return PaymentMethod.TRANSFER.value
-    if any(k in texto for k in ("tarjeta", "debito", "credito", "card", "posnet")):
-        return PaymentMethod.CARD.value
-    if any(k in texto for k in ("efectivo", "cash", "pesos")):
-        return PaymentMethod.CASH.value
+    # Se reconocen las variantes del habla ("transfe", "con tarjeta", "débito", "crédito"...).
+    for patron, medio in _PATRONES_DE_PAGO:
+        if re.search(patron, texto):
+            return medio.value
     return None
 
 
@@ -881,7 +886,7 @@ DELIVERY_VALUES = {metodo.value for metodo in DeliveryMethod}
 
 
 def _texto_de_opciones(opciones: list[PaymentMethod]) -> str:
-    """Los medios de pago en texto: 'Efectivo', 'Efectivo y Tarjeta' o 'Efectivo, Tarjeta y MercadoPago'."""
+    """Los medios de pago entre comillas: '"Efectivo"', '"Efectivo" y "Tarjeta"'..."""
     nombres = [f'"{PAYMENT_LABELS[metodo]}"' for metodo in opciones]
     return " y ".join([", ".join(nombres[:-1]), nombres[-1]]) if len(nombres) > 1 else "".join(nombres)
 
@@ -1064,12 +1069,15 @@ def _telefono_confirmado(datos: dict, canal: Channel | None, chat_id: str | None
     return str(datos.get("telefono") or datos.get("customer_phone") or "").strip()[:MAX_LARGO_TELEFONO]
 
 
-def _detalle_de_pago(db: Session, metodo_pago: str) -> str:
+def _detalle_de_pago(db: Session, metodo_pago: str, total: Decimal) -> str:
     if metodo_pago == PaymentMethod.MERCADOPAGO.value:
         # El link de MercadoPago se manda recién cuando el local acepta el pedido (ver start_chat_payment).
         return "MercadoPago (te pasamos el link de pago cuando el local acepte tu pedido)"
     if metodo_pago == PaymentMethod.TRANSFER.value:
-        return f"Transferencia ({transfer_instructions(db)})"
+        return (
+            f"Transferencia. Transferí ${total:,.2f} a {transfer_instructions(db)} y mandame por este chat una "
+            "foto del comprobante"
+        )
     if metodo_pago == PaymentMethod.CARD.value:
         return "Tarjeta (abonás al recibir o retirar tu pedido)"
     return "Efectivo (abonás al recibir o retirar tu pedido)"
@@ -1122,7 +1130,7 @@ def _registrar_pedido_confirmado(db: Session, datos: dict, canal: Channel | None
     )
     # Mismas reglas que los pedidos de la web y del mostrador (disponibilidad, máximo por producto, precios).
     try:
-        create_bot_order(
+        guardado = create_bot_order(
             db,
             pedido,
             channel=canal,
@@ -1132,7 +1140,7 @@ def _registrar_pedido_confirmado(db: Session, datos: dict, canal: Channel | None
         )
     except InvalidOrderError as exc:
         return f"El pedido NO se registró todavía. {exc}"
-    return _mensaje_pedido_registrado(cliente, programado, _detalle_de_pago(db, metodo_pago))
+    return _mensaje_pedido_registrado(cliente, programado, _detalle_de_pago(db, metodo_pago, guardado.total_amount))
 
 
 @tool

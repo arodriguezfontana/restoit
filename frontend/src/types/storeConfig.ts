@@ -111,6 +111,8 @@ export interface StoreConfig {
   accepts_card?: boolean;
   card_applies_to?: CardAppliesTo;
   accepts_mercadopago?: boolean;
+  /** Horas que se guarda el comprobante de una transferencia. */
+  proof_retention_hours?: number;
   /** Si el sistema tiene credenciales de MercadoPago (sin ellas no se puede activar). */
   mercadopago_available?: boolean;
   cash_pin_enabled?: boolean;
@@ -137,6 +139,7 @@ export interface StoreConfigUpdatePayload {
   accepts_card?: boolean;
   card_applies_to?: CardAppliesTo;
   accepts_mercadopago?: boolean;
+  proof_retention_hours?: number;
   cash_pin_enabled?: boolean;
   cash_pin?: string | null;
 }

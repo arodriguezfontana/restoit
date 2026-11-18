@@ -13,6 +13,7 @@ const BASE: PaymentSettings = {
   acceptsCard: false,
   cardAppliesTo: 'both',
   acceptsMercadopago: false,
+  proofRetentionHours: '48',
 };
 
 function renderSection(payments: Partial<PaymentSettings> = {}, mercadopagoAvailable = true) {

@@ -25,7 +25,12 @@ from app.models.order import (
 )
 from app.services import order_service
 from app.services.mercadopago_service import create_payment_preference
-from app.services.payment_methods_service import transfer_instructions
+from app.services.payment_methods_service import (
+    PAYMENT_PHRASES,
+    accepted_payment_methods,
+    options_text,
+    transfer_instructions,
+)
 from app.services.store_config_service import get_or_create_store_config
 from app.services.tools.order_tools import items_del_modelo, normalizar_metodo_pago, resolver_items
 
@@ -108,16 +113,21 @@ def _cuando_se_abona(order: Order) -> str:
     return "al retirarlo" if order.delivery_method == DeliveryMethod.PICKUP.value else "al recibirlo"
 
 
+def _opciones_de_pago(db: Session, order: Order) -> str:
+    """Los medios con los que el local acepta cobrar este pedido, en texto."""
+    return options_text(accepted_payment_methods(db, order.delivery_method))
+
+
 def _como_se_paga_tras_agregar(db: Session, order: Order) -> str:
     """Lo que sigue a los productos agregados: cuánto queda por pagar y cómo."""
     if order.has_partial_payment:
         return (
             f"Como ya habías pagado tu pedido anterior, te queda una diferencia de {_plata(order.amount_pending)}. "
-            "¿Querés pagarla en efectivo cuando llegue el pedido o te mando un link de MercadoPago por la diferencia?"
+            f"¿Cómo querés pagarla? Podés elegir entre: {_opciones_de_pago(db, order)}."
         )
     nuevo_total = f"Nuevo total: {_plata(order.total_amount)}."
     if order.payment_method != PaymentMethod.MERCADOPAGO.value:
-        como = "en efectivo" if order.payment_method in (None, PaymentMethod.CASH.value) else "con el mismo medio de pago"
+        como = PAYMENT_PHRASES.get(order.payment_method or PaymentMethod.CASH.value, "en efectivo")
         return f"{nuevo_total} Lo abonás {como} {_cuando_se_abona(order)}."
     if order.status == OrderStatus.PENDING.value:
         return f"{nuevo_total} {AVISO_LINK_AL_ACEPTAR}"
@@ -195,10 +205,12 @@ def _confirmacion_de_pago_cambiado(db: Session, order: Order, metodo: str) -> st
     monto = order.amount_pending if parcial else Decimal(order.total_amount)
     que_se_paga = "la diferencia" if parcial else "el pedido"
     if metodo != PaymentMethod.MERCADOPAGO.value:
-        como = {
-            PaymentMethod.TRANSFER.value: f"por transferencia ({transfer_instructions(db)})",
-            PaymentMethod.CARD.value: "con tarjeta",
-        }.get(metodo, "en efectivo")
+        como = PAYMENT_PHRASES.get(metodo, "en efectivo")
+        if metodo == PaymentMethod.TRANSFER.value:
+            return (
+                f"Listo ✅ Abonás {que_se_paga} por transferencia. Transferí {_plata(monto)} a "
+                f"{transfer_instructions(db)} y mandame por este chat una foto del comprobante."
+            )
         return f"Listo ✅ Abonás {que_se_paga} ({_plata(monto)}) {como} {_cuando_se_abona(order)}."
     if order.status == OrderStatus.PENDING.value:
         return f"Listo ✅ Pagás {que_se_paga} ({_plata(monto)}) por MercadoPago. {AVISO_LINK_AL_ACEPTAR}"

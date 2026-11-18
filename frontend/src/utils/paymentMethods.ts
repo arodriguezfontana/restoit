@@ -22,14 +22,3 @@ function cardApplies(appliesTo: string, delivery?: DeliveryMethod): boolean {
   if (appliesTo === 'both' || !delivery) return true;
   return appliesTo === (delivery === 'retiro' ? 'pickup' : 'delivery');
 }
-
-/** Los datos para transferir (alias, CBU y titular) en una línea. */
-export function transferDetails(config: StoreConfig | null): string {
-  if (!config) return '';
-  const parts = [
-    config.transfer_alias && `Alias: ${config.transfer_alias}`,
-    config.transfer_cbu && `CBU: ${config.transfer_cbu}`,
-    config.transfer_holder && `Titular: ${config.transfer_holder}`,
-  ];
-  return parts.filter(Boolean).join(' · ');
-}

@@ -601,3 +601,32 @@ def test_las_instrucciones_del_bot_listan_los_medios_del_local(db_session):
 
     assert "Efectivo" in texto and "local.test" in texto and "solo en pedidos con retiro" in texto
     assert "MercadoPago" not in texto
+
+
+@pytest.mark.parametrize(
+    ("texto", "esperado"),
+    [
+        ("transfe", "transferencia"),
+        ("por transferencia", "transferencia"),
+        ("te hago una transf", "transferencia"),
+        ("débito", "tarjeta"),
+        ("crédito", "tarjeta"),
+        ("con tarjeta", "tarjeta"),
+        ("MP", "mercadopago"),
+        ("link de pago", "mercadopago"),
+        ("cash", "efectivo"),
+        ("en efectivo", "efectivo"),
+        ("no sé", None),
+    ],
+)
+def test_el_bot_reconoce_variantes_del_medio_de_pago(texto, esperado):
+    from app.services.tools.order_tools import normalizar_metodo_pago
+
+    assert normalizar_metodo_pago(texto) == esperado
+
+
+def test_el_bot_con_transferencia_pasa_los_datos_y_pide_el_comprobante(db_session, products):
+    resultado = _confirmar(_datos(products, metodo_pago="transferencia"))
+
+    assert "$17,000.00" in resultado and "local.test" in resultado and "Local de Prueba" in resultado
+    assert "comprobante" in resultado

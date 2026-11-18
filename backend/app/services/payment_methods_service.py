@@ -16,6 +16,21 @@ PAYMENT_LABELS = {
 }
 
 
+# Cómo se dice que se paga con cada medio ("lo abonás en efectivo", "por transferencia", "con tarjeta"...).
+PAYMENT_PHRASES = {
+    PaymentMethod.CASH.value: "en efectivo",
+    PaymentMethod.TRANSFER.value: "por transferencia",
+    PaymentMethod.CARD.value: "con tarjeta",
+    PaymentMethod.MERCADOPAGO.value: "por MercadoPago",
+}
+
+
+def options_text(methods: list[PaymentMethod]) -> str:
+    """Los medios en texto: 'Efectivo', 'Efectivo y Tarjeta' o 'Efectivo, Tarjeta y MercadoPago'."""
+    names = [PAYMENT_LABELS[method] for method in methods]
+    return " y ".join([", ".join(names[:-1]), names[-1]]) if len(names) > 1 else "".join(names)
+
+
 class PaymentMethodNotAcceptedError(InvalidOrderError):
     def __init__(self, method: PaymentMethod, accepted: list[PaymentMethod]):
         options = ", ".join(PAYMENT_LABELS[m] for m in accepted)

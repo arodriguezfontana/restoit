@@ -14,6 +14,7 @@ from app.models.driver_review import DriverReview
 from app.models.menu import Category, Ingredient, Product, ProductAllowedExtra, ProductImage, ProductIngredient
 from app.models.menu_image import MenuImage
 from app.models.order import Order, OrderItem, OrderStatusEvent
+from app.models.payment_proof import PaymentProof
 from app.models.printer import Printer
 from app.models.promotion import Promotion, PromotionImage, PromotionPhoto, PromotionProduct
 from app.models.security import PinLockout, SecurityAuditEvent
@@ -37,6 +38,7 @@ __all__ = [
     "Order",
     "OrderItem",
     "OrderStatusEvent",
+    "PaymentProof",
     "Printer",
     "Product",
     "ProductAllowedExtra",

@@ -178,6 +178,33 @@ describe('TomarPedidoView', () => {
     expect(screen.getByRole('radio', { name: 'Efectivo' })).toHaveAttribute('aria-checked', 'false');
   });
 
+  it('con transferencia adjunta el comprobante al registrar el pedido', async () => {
+    orders.uploadPaymentProof.mockResolvedValue(null);
+    const user = await renderView();
+
+    await user.type(screen.getByLabelText('Teléfono *'), '11 4444-5555');
+    await user.type(screen.getByLabelText('Nombre *'), 'Paula');
+    await user.click(product(/Pizza Muzzarella/));
+    await screen.findByRole('radio', { name: 'Transferencia' });
+    await user.click(screen.getByRole('radio', { name: 'Transferencia' }));
+    const proof = new File(['x'], 'comprobante.png', { type: 'image/png' });
+    await user.upload(screen.getByLabelText(/Comprobante de la transferencia/), proof);
+    await user.click(screen.getByRole('button', { name: 'Confirmar pedido' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent('registrado correctamente');
+    expect(orders.uploadPaymentProof).toHaveBeenCalledWith(expect.any(Number), proof);
+  });
+
+  it('con efectivo o tarjeta se puede registrar como ya cobrado; con MercadoPago no', async () => {
+    const user = await renderView();
+    await screen.findByRole('radio', { name: 'Tarjeta' });
+
+    await user.click(screen.getByRole('radio', { name: 'Tarjeta' }));
+    expect(screen.getByRole('checkbox', { name: 'Ya abonado' })).toBeInTheDocument();
+    await user.click(screen.getByRole('radio', { name: 'MercadoPago' }));
+    expect(screen.queryByRole('checkbox', { name: 'Ya abonado' })).not.toBeInTheDocument();
+  });
+
   it('un segundo clic en el método de pago lo deja sin especificar', async () => {
     const user = await renderView();
 

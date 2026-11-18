@@ -156,6 +156,15 @@ export interface WebOrderItem {
   promotion_description?: string | null;
 }
 
+/** Comprobante de una transferencia adjuntado a un pedido (el archivo se baja aparte). */
+export interface PaymentProofInfo {
+  content_type: string;
+  size_bytes: number;
+  uploaded_at: string;
+  /** Cuándo se elimina solo. */
+  expires_at: string;
+}
+
 export interface WebOrderCreated {
   id: number;
   shift_number: number;
@@ -172,6 +181,9 @@ export interface WebOrderCreated {
   is_paid: boolean;
   /** Link de Checkout Pro de MercadoPago al que se redirige al cliente (solo si eligió MercadoPago). */
   payment_url: string | null;
+  /** Con transferencia: clave para adjuntar el comprobante sin tener cuenta. */
+  proof_upload_token?: string | null;
+  payment_proof?: PaymentProofInfo | null;
   /** Solo en pedidos de mostrador: por qué no se pudo imprimir la comanda (el pedido se guardó igual). */
   print_error?: string | null;
 }
@@ -243,6 +255,8 @@ export interface AdminOrder {
   balance_payment_method?: PaymentMethod | null;
   /** Se agregaron productos y cocina todavía no lo vio. */
   kitchen_update_pending?: boolean;
+  /** Comprobante vigente si el pedido se paga por transferencia y ya lo adjuntaron. */
+  payment_proof?: PaymentProofInfo | null;
   items?: WebOrderItem[];
   items_prepared_count?: number;
   is_all_prepared?: boolean;

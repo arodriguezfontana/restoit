@@ -95,6 +95,21 @@ export function PaymentMethodsSection({ payments, setPayments, mercadopagoAvaila
               <Field id="transfer-cbu" label="CBU / CVU" value={payments.transferCbu} onChange={(transferCbu) => update({ transferCbu })} placeholder="22 dígitos" />
               <Field id="transfer-holder" label="Titular" value={payments.transferHolder} onChange={(transferHolder) => update({ transferHolder })} placeholder="Nombre del titular" />
               <p className="sm:col-span-3 text-[11px] text-gray-500">Cargá el alias o el CBU, y el titular de la cuenta.</p>
+              <div className="space-y-1 sm:col-span-3 max-w-xs">
+                <label htmlFor="proof-retention" className="block text-xs font-semibold text-gray-700">
+                  Horas que se guarda el comprobante
+                </label>
+                <input
+                  id="proof-retention"
+                  type="number"
+                  min={1}
+                  max={720}
+                  value={payments.proofRetentionHours}
+                  onChange={(e) => update({ proofRetentionHours: e.target.value })}
+                  className={INPUT_CLASS}
+                />
+                <p className="text-[11px] text-gray-500">Pasado ese plazo desde que se sube, el comprobante se elimina solo (por defecto 48 h).</p>
+              </div>
             </div>
           )}
         </div>

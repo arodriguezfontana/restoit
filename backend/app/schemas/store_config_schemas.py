@@ -36,6 +36,7 @@ class StoreConfigResponse(BaseModel):
     accepts_card: bool = False
     card_applies_to: str = "both"
     accepts_mercadopago: bool = False
+    proof_retention_hours: int = 48
     # Si el sistema tiene credenciales de MercadoPago (sin ellas no se puede activar).
     mercadopago_available: bool = False
     cash_pin_enabled: bool = False
@@ -82,6 +83,7 @@ class StoreConfigUpdate(BaseModel):
     accepts_card: bool = Field(False, description="Si el local cobra con tarjeta")
     card_applies_to: str = Field("both", pattern=CARD_APPLIES_TO_PATTERN, description="Pedidos con tarjeta: retiro, envío o ambos")
     accepts_mercadopago: bool = Field(False, description="Si el local cobra con MercadoPago")
+    proof_retention_hours: int = Field(48, ge=1, le=720, description="Horas que se guarda el comprobante de una transferencia")
     cash_pin_enabled: bool = Field(False, description="Si la caja exige PIN de 4 dígitos para ser operada")
     cash_pin: str | None = Field(None, pattern=r"^\d{4}$", description="PIN de 4 dígitos para control de caja")
 

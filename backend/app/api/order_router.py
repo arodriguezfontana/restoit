@@ -1,12 +1,13 @@
 import logging
 from datetime import datetime
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
 from fastapi import status as http_status
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin, get_optional_current_user
+from app.api.uploads import image_body
 from app.db.session import get_db
 from app.models.order import OrderStatus, PaymentMethod
 from app.models.user import User
@@ -26,7 +27,7 @@ from app.schemas.order_schemas import (
     WebOrderCreatedResponse,
 )
 from app.schemas.printer_schemas import PrintResult
-from app.services import delivery_trip_service, order_service, printer_service
+from app.services import delivery_trip_service, order_service, payment_proof_service, printer_service
 from app.services.channels import enviar_mensaje
 from app.services.mercadopago_service import (
     payment_received_message,
@@ -126,6 +127,53 @@ def reprint_order(
 ) -> PrintResult:
     """Vuelve a imprimir la comanda de un pedido (papel atascado, ticket perdido). No modifica el pedido."""
     return printer_service.print_order(db, order_service.get_order(db, order_id))
+
+
+@router.put("/web/{order_id}/payment-proof", status_code=http_status.HTTP_201_CREATED)
+def upload_web_payment_proof(
+    order_id: int,
+    token: str = Query(..., description="Clave que recibió el cliente al hacer el pedido"),
+    proof: bytes = Depends(image_body),
+    db: Session = Depends(get_db),
+) -> OrderResponse:
+    """Endpoint público: el cliente de la web adjunta (o reemplaza) el comprobante de su transferencia."""
+    payment_proof_service.require_valid_token(order_id, token)
+    order = order_service.get_order(db, order_id)
+    payment_proof_service.save_proof(db, order, proof)
+    return OrderResponse.from_model(order)
+
+
+@router.put(
+    "/{order_id}/payment-proof",
+    status_code=http_status.HTTP_201_CREATED,
+    dependencies=[Depends(get_current_admin)],
+)
+def upload_payment_proof(
+    order_id: int,
+    proof: bytes = Depends(image_body),
+    db: Session = Depends(get_db),
+) -> OrderResponse:
+    """Adjunta o reemplaza el comprobante de transferencia (JPG, PNG, WEBP o PDF de hasta 5 MB) mientras el pago no
+    esté confirmado. El cuerpo es el archivo, sin formulario."""
+    order = order_service.get_order(db, order_id)
+    payment_proof_service.save_proof(db, order, proof)
+    return OrderResponse.from_model(order)
+
+
+@router.get("/{order_id}/payment-proof", response_class=Response, dependencies=[Depends(get_current_admin)])
+def get_payment_proof_file(order_id: int, db: Session = Depends(get_db)) -> Response:
+    """El archivo del comprobante (mientras no venza)."""
+    proof = payment_proof_service.get_proof_file(db, order_id)
+    return Response(content=proof.data, media_type=proof.content_type, headers={"Cache-Control": "private, no-store"})
+
+
+@router.delete(
+    "/{order_id}/payment-proof",
+    status_code=http_status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(get_current_admin)],
+)
+def delete_payment_proof(order_id: int, db: Session = Depends(get_db)) -> None:
+    payment_proof_service.delete_proof(db, order_id)
 
 
 @router.get("/{order_id}", dependencies=[Depends(get_current_admin)])

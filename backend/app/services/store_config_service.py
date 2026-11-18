@@ -31,6 +31,7 @@ class StoreConfigChanges(Protocol):
     accepts_card: bool
     card_applies_to: str
     accepts_mercadopago: bool
+    proof_retention_hours: int
 
 
 DEFAULT_STORE_CONFIG = {
@@ -83,6 +84,7 @@ def update_store_config(db: Session, data: StoreConfigChanges) -> StoreConfig:
         config.accepts_card = data.accepts_card
         config.card_applies_to = data.card_applies_to
         config.accepts_mercadopago = data.accepts_mercadopago
+        config.proof_retention_hours = data.proof_retention_hours
     db.refresh(config)
     return config
 

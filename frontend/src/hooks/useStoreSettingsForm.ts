@@ -20,6 +20,8 @@ export interface PaymentSettings {
   acceptsCard: boolean;
   cardAppliesTo: CardAppliesTo;
   acceptsMercadopago: boolean;
+  /** Horas que se guarda el comprobante de una transferencia (texto del campo). */
+  proofRetentionHours: string;
 }
 
 function paymentSettingsFrom(config: StoreConfig): PaymentSettings {
@@ -33,6 +35,7 @@ function paymentSettingsFrom(config: StoreConfig): PaymentSettings {
     cardAppliesTo: config.card_applies_to || 'both',
     // Sin credenciales no se puede cobrar por MercadoPago, aunque haya quedado activado.
     acceptsMercadopago: Boolean(config.accepts_mercadopago) && Boolean(config.mercadopago_available),
+    proofRetentionHours: String(config.proof_retention_hours ?? 48),
   };
 }
 
@@ -44,6 +47,10 @@ function paymentsProblem(payments: PaymentSettings): string | null {
     return 'Para aceptar transferencias cargá el alias o el CBU.';
   }
   if (acceptsTransfer && !payments.transferHolder.trim()) return 'Para aceptar transferencias cargá el titular de la cuenta.';
+  const hours = Number(payments.proofRetentionHours);
+  if (acceptsTransfer && !(Number.isInteger(hours) && hours >= 1 && hours <= 720)) {
+    return 'Las horas que se guarda el comprobante tienen que ser un número entre 1 y 720.';
+  }
   return null;
 }
 
@@ -229,6 +236,7 @@ export function useStoreSettingsForm(onConfigUpdated?: (config: StoreConfig) => 
         accepts_card: payments.acceptsCard,
         card_applies_to: payments.cardAppliesTo,
         accepts_mercadopago: payments.acceptsMercadopago,
+        proof_retention_hours: Number(payments.proofRetentionHours) || 48,
         cash_pin_enabled: cashPinEnabled,
         cash_pin: cashPinEnabled ? cashPin : null,
       });

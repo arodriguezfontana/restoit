@@ -41,6 +41,8 @@ class StoreConfig(Base):
     accepts_card: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     # A qué pedidos se cobra con tarjeta: "pickup" (retiro), "delivery" (envío) o "both" (los dos).
     card_applies_to: Mapped[str] = mapped_column(String(10), nullable=False, default="both", server_default="both")
+    # Horas que se guarda el comprobante de una transferencia antes de eliminarse.
+    proof_retention_hours: Mapped[int] = mapped_column(Integer, nullable=False, default=48, server_default="48")
     accepts_mercadopago: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     # Seguridad de caja mediante PIN (opcional)
     cash_pin_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
