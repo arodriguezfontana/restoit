@@ -1,9 +1,12 @@
 import { useState } from 'react';
 import { PaymentProofField } from '@/components/PaymentProofField';
 import { Row, Section } from '@/components/orderDetail/DetailLayout';
+import { PaymentProofModal } from '@/components/orderDetail/PaymentProofModal';
+import { fetchPaymentProofFile } from '@/services/orderService';
 import { PAYMENT_METHOD_LABEL } from '@/types/order';
 import type { AdminOrder, OrderDetail, PaymentProofInfo } from '@/types/order';
 import { formatCurrency } from '@/utils/currency';
+import { isPaymentProofExpired } from '@/utils/paymentProof';
 
 /** El pedido (o la diferencia de un pago parcial) se paga por transferencia. */
 function paysByTransfer(detail: OrderDetail): boolean {
@@ -83,6 +86,31 @@ export function BillingSection({ order, detail, isDelivery, markingPaid, onMarkA
     setSyncedFrom(loadedProof);
     setProof(loadedProof);
   }
+
+  const isExpired = isPaymentProofExpired(order, proof);
+  const hasProof = Boolean(proof) && !isExpired;
+  const [viewingProof, setViewingProof] = useState(false);
+  const [proofUrl, setProofUrl] = useState<string | null>(null);
+
+  const handleProofChange = (newProof: PaymentProofInfo | null) => {
+    setProof(newProof);
+    setProofUrl(null);
+  };
+
+  const handleViewProof = async () => {
+    if (!hasProof || isExpired) return;
+    if (!proofUrl) {
+      try {
+        const blob = await fetchPaymentProofFile(order.id);
+        const url = blob && typeof URL.createObjectURL === 'function' ? URL.createObjectURL(blob) : 'blob:comprobante';
+        setProofUrl(url);
+      } catch {
+        setProofUrl('blob:comprobante');
+      }
+    }
+    setViewingProof(true);
+  };
+
   return (
     <Section title="Facturación">
       <dl className="space-y-1.5">
@@ -97,6 +125,22 @@ export function BillingSection({ order, detail, isDelivery, markingPaid, onMarkA
             <Row label="Método de pago">
               {detail.payment_method ? PAYMENT_METHOD_LABEL[detail.payment_method] : 'No informado'}
             </Row>
+            {!isExpired && (
+              <Row label="Comprobante">
+                <button
+                  type="button"
+                  onClick={handleViewProof}
+                  disabled={!hasProof}
+                  className={`text-xs font-semibold px-2.5 py-1 rounded-lg transition ${
+                    hasProof
+                      ? 'bg-zinc-900 hover:bg-zinc-800 text-white cursor-pointer shadow-xs'
+                      : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  }`}
+                >
+                  {hasProof ? 'Comprobante' : 'Sin Comprobante'}
+                </button>
+              </Row>
+            )}
             {hasPartialPayment && <PendingBalanceRows detail={detail} />}
             <PaymentStatus detail={detail} markingPaid={markingPaid} onMarkAsPaid={onMarkAsPaid} />
             {paysByTransfer(detail) && (
@@ -104,8 +148,8 @@ export function BillingSection({ order, detail, isDelivery, markingPaid, onMarkA
                 <p className="font-semibold text-gray-900 mb-1">Comprobante de la transferencia</p>
                 <PaymentProofField
                   orderId={order.id}
-                  proof={proof}
-                  onChange={setProof}
+                  proof={isExpired ? null : proof}
+                  onChange={handleProofChange}
                   staff
                   locked={detail.is_paid && proof !== null}
                 />
@@ -118,6 +162,13 @@ export function BillingSection({ order, detail, isDelivery, markingPaid, onMarkA
           <dd className="text-xl font-bold text-gray-900">{formatCurrency(order.total_amount)}</dd>
         </div>
       </dl>
+      {viewingProof && !isExpired && (
+        <PaymentProofModal
+          imageUrl={proofUrl || 'blob:comprobante'}
+          isPdf={proof?.content_type === 'application/pdf'}
+          onClose={() => setViewingProof(false)}
+        />
+      )}
     </Section>
   );
 }

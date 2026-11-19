@@ -275,6 +275,68 @@ describe('ComandasBoard', () => {
     expect(screen.getByText('Viajando')).toBeInTheDocument();
   });
 
+  it.each(['tarjeta', 'transferencia', 'efectivo'] as const)(
+    'al finalizar sin cobrar con %s aparece el aviso de pedido sin abonar',
+    async (method) => {
+      service.fetchOrders.mockResolvedValue([
+        makeOrder({
+          id: 40,
+          shift_number: 40,
+          customer_name: 'Cliente Pago',
+          status: 'Listo para Retirar',
+          delivery_method: 'retiro',
+          payment_method: method,
+          is_paid: false,
+          total_amount: 15000,
+        }),
+      ]);
+      render(<ComandasBoard />);
+      const user = userEvent.setup();
+      await screen.findByText('Cliente Pago');
+
+      await user.click(within(column('Listo para Retirar')).getByRole('button', { name: 'Finalizar' }));
+
+      const dialog = await screen.findByRole('dialog', { name: 'El pedido aún no está pago' });
+      expect(dialog).toBeInTheDocument();
+      expect(dialog).toHaveTextContent('Pedido #40');
+      expect(dialog).toHaveTextContent('15.000');
+    }
+  );
+
+  it('el despacho del pedido no se impide por estar sin abonar o sin comprobante', async () => {
+    service.fetchOrders.mockResolvedValue([
+      makeOrder({
+        id: 50,
+        customer_name: 'Sin Abonar En Viaje',
+        status: 'En Camino',
+        delivery_method: 'domicilio',
+        delivery_driver_id: 1,
+        delivery_driver_name: 'Nico',
+        payment_method: 'transferencia',
+        is_paid: false,
+        payment_proof: null,
+      }),
+    ]);
+    service.dispatchTrip.mockResolvedValue({
+      id: 10,
+      delivery_driver_id: 1,
+      delivery_driver_name: 'Nico',
+      dispatched_at: '2026-11-06T20:00:00Z',
+      total_minutes: 15,
+      stops: [
+        { order_id: 50, stop: 1, address: 'Calle 123', customer_name: 'Sin Abonar En Viaje', eta_minutes: 15 },
+      ],
+    });
+    render(<ComandasBoard />);
+    const user = userEvent.setup();
+    await screen.findByText('Sin Abonar En Viaje');
+
+    await user.click(screen.getByRole('button', { name: 'Iniciar viaje de Nico' }));
+
+    expect(service.dispatchTrip).toHaveBeenCalledWith(1);
+    expect(await screen.findByText('En viaje · llega en ~15 min')).toBeInTheDocument();
+  });
+
   it('indica junto a Confirmados cuántos pedidos fueron modificados', async () => {
     service.fetchOrders.mockResolvedValue([
       ...ORDERS,

@@ -428,4 +428,106 @@ describe('OrderDetailModal', () => {
       expect(within(dialog).getAllByText('$ 26.500,00').length).toBeGreaterThanOrEqual(1);
     });
   });
+
+  describe('Revisar y confirmar cobros (US-61)', () => {
+    it('con comprobante cargado veo el botón Comprobante y al presionar se visualiza la imagen', async () => {
+      const now = new Date();
+      const order = makeOrder({
+        ...ORDER,
+        created_at: now.toISOString(),
+      });
+      service.fetchOrderDetail.mockResolvedValueOnce(
+        makeOrderDetail({
+          ...order,
+          payment_method: 'transferencia',
+          payment_proof: {
+            content_type: 'image/jpeg',
+            size_bytes: 1500,
+            uploaded_at: now.toISOString(),
+            expires_at: new Date(now.getTime() + 48 * 3600 * 1000).toISOString(),
+          },
+        })
+      );
+      service.fetchPaymentProofFile.mockResolvedValueOnce(new Blob(['fake-img'], { type: 'image/jpeg' }));
+
+      const { user } = renderModal(order);
+      const button = await screen.findByRole('button', { name: 'Comprobante' });
+      expect(button).toBeInTheDocument();
+
+      await user.click(button);
+
+      const modal = await screen.findByRole('dialog', { name: 'Comprobante de pago' });
+      expect(modal).toBeInTheDocument();
+      expect(within(modal).getByRole('img', { name: 'Comprobante de pago' })).toBeInTheDocument();
+
+      await user.click(within(modal).getByRole('button', { name: 'Cerrar comprobante' }));
+      expect(screen.queryByRole('dialog', { name: 'Comprobante de pago' })).not.toBeInTheDocument();
+    });
+
+    it('sin comprobante cargado veo el botón Sin Comprobante', async () => {
+      const now = new Date();
+      const order = makeOrder({
+        ...ORDER,
+        created_at: now.toISOString(),
+      });
+      service.fetchOrderDetail.mockResolvedValueOnce(
+        makeOrderDetail({
+          ...order,
+          payment_method: 'transferencia',
+          payment_proof: null,
+        })
+      );
+
+      renderModal(order);
+      const button = await screen.findByRole('button', { name: 'Sin Comprobante' });
+      expect(button).toBeInTheDocument();
+      expect(button).toBeDisabled();
+      expect(screen.queryByRole('dialog', { name: 'Comprobante de pago' })).not.toBeInTheDocument();
+    });
+
+    it('comprobante vencido: pasadas las 48 h la imagen ya no se muestra y el botón de Comprobante desaparece', async () => {
+      const past = new Date(Date.now() - 50 * 3600 * 1000);
+      const order = makeOrder({
+        ...ORDER,
+        created_at: past.toISOString(),
+      });
+      service.fetchOrderDetail.mockResolvedValueOnce(
+        makeOrderDetail({
+          ...order,
+          payment_method: 'transferencia',
+          payment_proof: {
+            content_type: 'image/jpeg',
+            size_bytes: 1500,
+            uploaded_at: past.toISOString(),
+            expires_at: new Date(past.getTime() + 48 * 3600 * 1000).toISOString(),
+          },
+        })
+      );
+
+      renderModal(order);
+      await screen.findByText('Transferencia');
+
+      expect(screen.queryByRole('button', { name: 'Comprobante' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('dialog', { name: 'Comprobante de pago' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('img', { name: 'Comprobante de pago' })).not.toBeInTheDocument();
+    });
+
+    it('permite confirmar el cobro con tarjeta presencial marcándolo como abonado', async () => {
+      service.fetchOrderDetail.mockResolvedValueOnce(
+        makeOrderDetail({
+          ...ORDER,
+          payment_method: 'tarjeta',
+          is_paid: false,
+        })
+      );
+      const onMarkPaid = vi.fn().mockResolvedValue(undefined);
+      const { user } = renderModal(ORDER, false, onMarkPaid);
+
+      expect(await screen.findByText('Tarjeta')).toBeInTheDocument();
+      const button = screen.getByRole('button', { name: 'Marcar como abonado' });
+      await user.click(button);
+
+      expect(onMarkPaid).toHaveBeenCalledWith(55, true);
+    });
+  });
 });
