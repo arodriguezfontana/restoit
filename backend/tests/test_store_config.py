@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 CONFIG_URL = "/api/v1/store-config"
 
 
@@ -196,3 +198,73 @@ def test_el_fondo_del_panel_tiene_que_ser_una_opcion_valida_con_imagen_data_url(
     assert client.put(CONFIG_URL, json={**BASE, "panel_bg": "pizza"}).status_code == 422
     invalida = {**BASE, "panel_bg": "custom", "panel_bg_image": "https://x.com/a.js"}
     assert client.put(CONFIG_URL, json=invalida).status_code == 422
+
+
+# --- Medios de pago (US-59) ---
+
+
+def _config(**overrides) -> dict:
+    return {"store_name": "Local", **overrides}
+
+
+def test_por_defecto_solo_se_acepta_efectivo_en_la_config_guardada_sin_medios(client):
+    response = client.put(CONFIG_URL, json=_config())
+
+    data = response.json()
+    assert response.status_code == 200
+    assert (data["accepts_cash"], data["accepts_transfer"], data["accepts_card"], data["accepts_mercadopago"]) == (
+        True,
+        False,
+        False,
+        False,
+    )
+
+
+def test_transferencia_requiere_alias_o_cbu_y_titular(client):
+    sin_datos = client.put(CONFIG_URL, json=_config(accepts_transfer=True))
+    sin_titular = client.put(CONFIG_URL, json=_config(accepts_transfer=True, transfer_alias="mi.alias"))
+    con_alias = client.put(
+        CONFIG_URL, json=_config(accepts_transfer=True, transfer_alias="mi.alias", transfer_holder="Ana Pérez")
+    )
+    con_cbu = client.put(
+        CONFIG_URL, json=_config(accepts_transfer=True, transfer_cbu="0000003100012345678901", transfer_holder="Ana")
+    )
+
+    assert sin_datos.status_code == 422
+    assert sin_titular.status_code == 422
+    assert con_alias.status_code == 200
+    assert con_alias.json()["transfer_holder"] == "Ana Pérez"
+    assert con_cbu.status_code == 200
+
+
+def test_tarjeta_guarda_a_que_pedidos_aplica(client):
+    response = client.put(CONFIG_URL, json=_config(accepts_card=True, card_applies_to="delivery"))
+    invalida = client.put(CONFIG_URL, json=_config(accepts_card=True, card_applies_to="siempre"))
+
+    assert response.json()["card_applies_to"] == "delivery"
+    assert invalida.status_code == 422
+
+
+def test_mercadopago_solo_se_activa_con_credenciales(client):
+    with patch("app.schemas.store_config_schemas.mercadopago_configured", return_value=False):
+        sin_credenciales = client.put(CONFIG_URL, json=_config(accepts_mercadopago=True))
+    with patch("app.schemas.store_config_schemas.mercadopago_configured", return_value=True):
+        con_credenciales = client.put(CONFIG_URL, json=_config(accepts_mercadopago=True))
+
+    assert sin_credenciales.status_code == 422
+    assert con_credenciales.status_code == 200
+    assert con_credenciales.json()["accepts_mercadopago"] is True
+
+
+def test_siempre_queda_al_menos_un_medio_activo(client):
+    response = client.put(CONFIG_URL, json=_config(accepts_cash=False))
+
+    assert response.status_code == 422
+    assert "al menos un medio" in response.text
+
+
+def test_la_config_publica_informa_si_hay_credenciales_de_mercadopago(public_client):
+    with patch("app.api.store_config_router.mercadopago_configured", return_value=True):
+        assert public_client.get(CONFIG_URL).json()["mercadopago_available"] is True
+    with patch("app.api.store_config_router.mercadopago_configured", return_value=False):
+        assert public_client.get(CONFIG_URL).json()["mercadopago_available"] is False

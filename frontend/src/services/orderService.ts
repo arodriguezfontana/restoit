@@ -6,6 +6,7 @@ import type {
   OrderDelayEstimate,
   OrderDetail,
   OrderStatus,
+  PaymentProofInfo,
   PreparationSector,
   WebOrderCreated,
   WebOrderPayload,
@@ -138,3 +139,29 @@ export async function updateOrderSectorPrepared(
   return data;
 }
 
+
+/** Formatos y peso máximo del comprobante de una transferencia (los mismos que valida el servidor). */
+export const PROOF_ACCEPT = 'image/jpeg,image/png,image/webp,application/pdf';
+export const PROOF_MAX_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Adjunta (o reemplaza) el comprobante de una transferencia. El cliente de la web lo hace con la clave que recibió al
+ * hacer el pedido; el personal, con su sesión.
+ */
+export async function uploadPaymentProof(orderId: number, file: File, token?: string): Promise<PaymentProofInfo | null> {
+  const config = { headers: { 'Content-Type': file.type || 'application/octet-stream' }, timeout: 30000 };
+  const { data } = token
+    ? await api.put<AdminOrder>(`/orders/web/${orderId}/payment-proof`, file, { ...config, params: { token } })
+    : await api.put<AdminOrder>(`/orders/${orderId}/payment-proof`, file, config);
+  return data.payment_proof ?? null;
+}
+
+/** El archivo del comprobante (solo el personal). */
+export async function fetchPaymentProofFile(orderId: number): Promise<Blob> {
+  const { data } = await api.get<Blob>(`/orders/${orderId}/payment-proof`, { responseType: 'blob' });
+  return data;
+}
+
+export async function deletePaymentProof(orderId: number): Promise<void> {
+  await api.delete(`/orders/${orderId}/payment-proof`);
+}

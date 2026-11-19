@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -34,6 +35,7 @@ from app.api import (
 from app.api.errors import register_error_handlers
 from app.core.config import settings
 from app.db.session import get_db
+from app.services import payment_proof_service
 from app.services.channels import registrar_webhooks
 
 logging.basicConfig(level=logging.INFO)
@@ -48,7 +50,11 @@ async def lifespan(_: FastAPI):
     except Exception as e:
         logging.getLogger(__name__).warning("No se pudo ejecutar create_all en startup: %s", e)
     await registrar_webhooks()
-    yield
+    cleanup = asyncio.create_task(payment_proof_service.run_cleanup_loop())
+    try:
+        yield
+    finally:
+        cleanup.cancel()
 
 
 app = FastAPI(

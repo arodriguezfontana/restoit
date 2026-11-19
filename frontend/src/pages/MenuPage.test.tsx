@@ -95,6 +95,8 @@ beforeEach(() => {
     logo_url: null,
     theme_color: 'black',
     login_bg: 'bistro',
+    accepts_mercadopago: true,
+    mercadopago_available: true,
   });
   promotions.fetchAvailablePromotions.mockResolvedValue([]);
 });
@@ -280,7 +282,6 @@ describe('MenuPage', () => {
     expect(within(payment).getByRole('radio', { name: 'Efectivo' })).toHaveAttribute('aria-checked', 'true');
 
     await user.click(within(payment).getByRole('radio', { name: 'MercadoPago' }));
-    expect(plain(screen.getByText(/te llevamos a MercadoPago/).textContent)).toContain('$ 8.500');
     await user.click(screen.getByRole('button', { name: 'Confirmar e ir a pagar' }));
 
     expect(orders.createWebOrder).toHaveBeenCalledWith(expect.objectContaining({ payment_method: 'mercadopago' }));

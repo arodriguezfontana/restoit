@@ -7,13 +7,15 @@ import { ProductCatalog } from '@/components/mostrador/ProductCatalog';
 import { useAvailablePromotions } from '@/hooks/useAvailablePromotions';
 import { useClientLookup } from '@/hooks/useClientLookup';
 import { useMenuProducts } from '@/hooks/useMenuProducts';
+import { useStoreConfig } from '@/hooks/useStoreConfig';
 import { useOrderLines } from '@/hooks/useOrderLines';
 import { fetchCurrentCashShift } from '@/services/cashShiftService';
-import { createCounterOrder } from '@/services/orderService';
+import { createCounterOrder, uploadPaymentProof } from '@/services/orderService';
 import type { DeliveryMethod, PaymentMethod } from '@/types/order';
 import { buildCounterOrderPayload, validateCounterOrder } from '@/utils/counterOrder';
 import type { CounterOrderErrors } from '@/utils/counterOrder';
 import { getErrorMessage } from '@/utils/errors';
+import { acceptedPaymentMethods } from '@/utils/paymentMethods';
 import { printErrorMessage } from '@/utils/printing';
 
 const CLOSED_CASH_MESSAGE =
@@ -32,6 +34,8 @@ export function TomarPedidoView() {
   const [address, setAddress] = useState('');
   const [notes, setNotes] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [proofError, setProofError] = useState<string | null>(null);
   const [isPaid, setIsPaid] = useState(false);
   const [errors, setErrors] = useState<CounterOrderErrors>({});
   const [isShiftOpen, setIsShiftOpen] = useState<boolean | null>(null);
@@ -77,13 +81,18 @@ export function TomarPedidoView() {
     setAddress('');
     setNotes('');
     setPaymentMethod(null);
+    setProofFile(null);
     setIsPaid(false);
     setErrors({});
     setSubmitError(null);
     clientLookup.reset();
   };
 
-  const form = { name, phone, deliveryMethod, address, notes, paymentMethod, isPaid };
+  const { storeConfig } = useStoreConfig();
+  const paymentMethods = acceptedPaymentMethods(storeConfig, deliveryMethod);
+  // Si el local deshabilitó el medio elegido (o no vale para este tipo de entrega), queda sin especificar.
+  const selectedPayment = paymentMethod && paymentMethods.includes(paymentMethod) ? paymentMethod : null;
+  const form = { name, phone, deliveryMethod, address, notes, paymentMethod: selectedPayment, isPaid };
 
   const handleConfirm = async (event: SubmitEvent) => {
     event.preventDefault();
@@ -94,6 +103,7 @@ export function TomarPedidoView() {
     setSubmitError(null);
     setLastOrderId(null);
     setPrintFailed(false);
+    setProofError(null);
     if (Object.keys(nextErrors).length > 0) return;
 
     if (isShiftOpen === false) {
@@ -104,7 +114,16 @@ export function TomarPedidoView() {
     setSubmitting(true);
     try {
       const created = await createCounterOrder(buildCounterOrderPayload(form, order.lines));
+      const proof = selectedPayment === 'transferencia' ? proofFile : null;
       resetOrder();
+      if (proof) {
+        // El pedido ya está registrado: si el comprobante falla se puede adjuntar después desde el detalle.
+        try {
+          await uploadPaymentProof(created.id, proof);
+        } catch (err) {
+          setProofError(getErrorMessage(err, 'No se pudo adjuntar el comprobante.'));
+        }
+      }
       setLastOrderId(created.shift_number);
       setPrintFailed(Boolean(created.print_error));
       phoneInputRef.current?.focus();
@@ -120,6 +139,11 @@ export function TomarPedidoView() {
       {lastOrderId !== null && printFailed && (
         <div role="alert" className="rounded-xl bg-amber-50 border border-amber-300 text-amber-900 px-4 py-3 text-sm font-semibold">
           {printErrorMessage(lastOrderId)}. Podés reimprimirla desde el Historial.
+        </div>
+      )}
+      {lastOrderId !== null && proofError && (
+        <div role="alert" className="rounded-xl bg-amber-50 border border-amber-300 text-amber-900 px-4 py-3 text-sm font-semibold">
+          El pedido se registró, pero no se pudo adjuntar el comprobante: {proofError} Adjuntalo después desde el detalle del pedido.
         </div>
       )}
       {lastOrderId !== null && (
@@ -186,7 +210,10 @@ export function TomarPedidoView() {
           total={order.total}
           units={order.units}
           itemsError={errors.items}
-          paymentMethod={paymentMethod}
+          paymentMethods={paymentMethods}
+          proofFile={proofFile}
+          onProofFileChange={setProofFile}
+          paymentMethod={selectedPayment}
           onPaymentMethodChange={setPaymentMethod}
           isPaid={isPaid}
           onPaidChange={setIsPaid}

@@ -506,7 +506,7 @@ def test_si_falta_el_metodo_de_pago_solo_pregunta_eso(products):
     resumen = _resumen_completo()
 
     assert "¿Está todo bien" not in resumen
-    assert resumen.rstrip().endswith('💳 ¿Cómo preferís pagar? Ofrecemos "Efectivo" y "MercadoPago".')
+    assert resumen.rstrip().endswith('💳 ¿Cómo preferís pagar? Ofrecemos "Efectivo", "Transferencia", "Tarjeta" y "MercadoPago".')
 
 
 def test_si_faltan_datos_no_pide_confirmar(products):
@@ -537,3 +537,96 @@ def test_si_saluda_y_ya_pide_algo_el_bot_lo_procesa_en_la_misma_respuesta():
 
     assert "saludalo y procesalo en la misma respuesta" in prompt
     assert "Si solo saluda, preguntale amablemente si quiere ver el menú" in prompt
+
+
+# --- Medios de pago habilitados por el local (US-59) ---
+
+
+def _habilitar(db_session, **cambios):
+    from app.services.store_config_service import get_or_create_store_config
+
+    config = get_or_create_store_config(db_session)
+    for campo, valor in cambios.items():
+        setattr(config, campo, valor)
+    db_session.commit()
+
+
+def test_el_bot_registra_un_pedido_pagado_por_transferencia_con_los_datos_de_cobro(db_session, products):
+    resultado = _confirmar(_datos(products, metodo_pago="transferencia"))
+
+    assert "Transferencia" in resultado
+    assert "local.test" in resultado
+    assert db_session.query(Order).one().payment_method == "transferencia"
+
+
+def test_el_bot_rechaza_un_pedido_con_un_medio_no_habilitado(db_session, products):
+    _habilitar(db_session, accepts_card=False)
+
+    resultado = _confirmar(_datos(products, metodo_pago="tarjeta"))
+
+    assert "NO se registró" in resultado
+    assert db_session.query(Order).count() == 0
+
+
+def test_el_resumen_ofrece_solo_los_medios_habilitados(db_session, products):
+    _habilitar(db_session, accepts_transfer=False, accepts_mercadopago=False, accepts_card=True)
+
+    resultado = _calcular(items_solicitados="1 Pizza Muzzarella", customer_name="Ana", customer_phone="11 4444-5555", metodo_entrega="retiro")
+
+    assert '"Efectivo" y "Tarjeta"' in resultado["mensaje_para_usuario"]
+    assert "MercadoPago" not in resultado["mensaje_para_usuario"]
+
+
+def test_si_el_cliente_pide_un_medio_no_habilitado_se_le_avisa_y_se_vuelve_a_preguntar(db_session, products):
+    _habilitar(db_session, accepts_card=False)
+
+    resultado = _calcular(
+        items_solicitados="1 Pizza Muzzarella",
+        customer_name="Ana",
+        customer_phone="11 4444-5555",
+        metodo_entrega="retiro",
+        metodo_pago="tarjeta",
+    )
+
+    assert "no acepta Tarjeta" in resultado["mensaje_para_usuario"]
+    assert resultado["datos_temporales"]["metodo_pago"] is None
+
+
+def test_las_instrucciones_del_bot_listan_los_medios_del_local(db_session):
+    from app.services.payment_methods_service import describe_for_bot
+
+    _habilitar(db_session, accepts_mercadopago=False, card_applies_to="pickup")
+
+    texto = describe_for_bot(db_session)
+
+    assert "Efectivo" in texto and "local.test" in texto and "solo en pedidos con retiro" in texto
+    assert "MercadoPago" not in texto
+
+
+@pytest.mark.parametrize(
+    ("texto", "esperado"),
+    [
+        ("transfe", "transferencia"),
+        ("por transferencia", "transferencia"),
+        ("te hago una transf", "transferencia"),
+        ("débito", "tarjeta"),
+        ("crédito", "tarjeta"),
+        ("con tarjeta", "tarjeta"),
+        ("MP", "mercadopago"),
+        ("link de pago", "mercadopago"),
+        ("cash", "efectivo"),
+        ("en efectivo", "efectivo"),
+        ("no sé", None),
+    ],
+)
+def test_el_bot_reconoce_variantes_del_medio_de_pago(texto, esperado):
+    from app.services.tools.order_tools import normalizar_metodo_pago
+
+    assert normalizar_metodo_pago(texto) == esperado
+
+
+def test_el_bot_con_transferencia_pasa_los_datos_y_pide_el_comprobante(db_session, products):
+    resultado = _confirmar(_datos(products, metodo_pago="transferencia"))
+
+    assert "$17,000.00" in resultado and "local.test" in resultado and "Local de Prueba" in resultado
+    assert "comprobante" in resultado

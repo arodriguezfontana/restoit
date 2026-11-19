@@ -60,6 +60,14 @@ api.interceptors.request.use(
   }
 );
 
+/** El mensaje de una regla del negocio que el servidor rechazó con 422 (los "Value error, ..."), si hay alguno. */
+function ruleMessage(detail: unknown): string | null {
+  if (!Array.isArray(detail)) return null;
+  const prefix = 'Value error, ';
+  const rule = detail.find((item) => typeof item?.msg === 'string' && item.msg.startsWith(prefix));
+  return rule ? (rule.msg as string).slice(prefix.length) : null;
+}
+
 api.interceptors.response.use(
   (response) => response,
   (error: AxiosError<{ detail?: unknown }>) => {
@@ -104,7 +112,7 @@ api.interceptors.response.use(
         break;
 
       case 422:
-        errorResponse.message = 'Algunos datos enviados no son válidos. Revisalos e intentá nuevamente.';
+        errorResponse.message = ruleMessage(error.response.data?.detail) ?? 'Algunos datos enviados no son válidos. Revisalos e intentá nuevamente.';
         break;
 
       case 500:

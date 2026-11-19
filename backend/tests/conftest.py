@@ -75,6 +75,20 @@ def _modelos_de_gemini_sin_fallas():
     modelos._respaldo_hasta = 0.0
 
 
+@pytest.fixture(autouse=True)
+def _local_con_todos_los_medios_de_pago(monkeypatch):
+    """Salvo que un test configure otra cosa, el local de prueba acepta todos los medios (y MercadoPago tiene
+    credenciales: sin ellas se usa el link simulado)."""
+    from app.services import payment_methods_service, store_config_service
+
+    monkeypatch.setattr(payment_methods_service, "mercadopago_configured", lambda: True)
+    monkeypatch.setitem(store_config_service.DEFAULT_STORE_CONFIG, "accepts_transfer", True)
+    monkeypatch.setitem(store_config_service.DEFAULT_STORE_CONFIG, "transfer_alias", "local.test")
+    monkeypatch.setitem(store_config_service.DEFAULT_STORE_CONFIG, "transfer_holder", "Local de Prueba")
+    monkeypatch.setitem(store_config_service.DEFAULT_STORE_CONFIG, "accepts_card", True)
+    monkeypatch.setitem(store_config_service.DEFAULT_STORE_CONFIG, "accepts_mercadopago", True)
+
+
 @pytest.fixture()
 def db_session():
     Base.metadata.create_all(bind=engine)

@@ -36,6 +36,7 @@ from app.services.modifier_nlp import (
     filtrar_modificadores_para_producto,
     vincular_modificadores_con_db,
 )
+from app.services.payment_methods_service import ensure_payment_method_accepted
 
 logger = logging.getLogger(__name__)
 
@@ -293,6 +294,7 @@ def create_web_order(
     horario de atención del local (si no, lanza LocalCerradoError).
     """
     verificar_local_abierto(db)
+    ensure_payment_method_accepted(db, payment_method, request.delivery_method)
     order = _new_order(db, request, OrderSource.WEB)
     order.customer_id = user.id if user is not None and user.is_customer else None
     order.status = OrderStatus.CONFIRMED.value
@@ -316,6 +318,7 @@ def create_counter_order(db: Session, request: OrderRequest, payment: CounterPay
     if not shift:
         raise BusinessRuleError("No se pueden tomar ni facturar pedidos porque la caja no está abierta. Abrí la caja antes de continuar.")
 
+    ensure_payment_method_accepted(db, payment.method, request.delivery_method)
     order = _new_order(db, request, OrderSource.COUNTER)
     order.cash_shift_id = shift.id
     order.status = OrderStatus.CONFIRMED.value
@@ -337,6 +340,7 @@ def create_bot_order(
     payment_method: str | None = None,
 ) -> Order:
     """Pedido confirmado por el cliente en el chat del bot (de cualquier canal): queda 'Pendiente' como los de la web."""
+    ensure_payment_method_accepted(db, payment_method, request.delivery_method)
     order = _new_order(db, request, OrderSource.BOT)
     order.channel = Channel(channel).value if channel else None
     order.chat_id = chat_id
@@ -552,6 +556,7 @@ def add_items_to_order(db: Session, order: Order, items: list[tuple]) -> Decimal
 
 def change_order_payment_method(db: Session, order: Order, method: PaymentMethod | str) -> None:
     """Cambia el medio de pago del pedido (o el de la diferencia, si tiene un pago parcial). No toca a cocina."""
+    ensure_payment_method_accepted(db, method, order.delivery_method)
     with transaction(db):
         order.change_payment_method(method)
     db.refresh(order)

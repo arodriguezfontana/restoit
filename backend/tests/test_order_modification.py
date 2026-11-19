@@ -196,7 +196,8 @@ def test_tool_agregar_a_pedido_pagado_informa_la_diferencia_y_ofrece_opciones(db
     respuesta = _agregar("1 Coca-Cola")
 
     assert "Como ya habías pagado tu pedido anterior, te queda una diferencia de $2,500.00" in respuesta
-    assert "¿Querés pagarla en efectivo cuando llegue el pedido o te mando un link de MercadoPago" in respuesta
+    # Ofrece los medios que el local tiene habilitados, sin asumir efectivo o MercadoPago.
+    assert "Podés elegir entre: Efectivo, Transferencia, Tarjeta y MercadoPago." in respuesta
 
 
 def test_tool_pasados_los_10_minutos_rechaza_con_el_telefono_del_local(db_session, products):

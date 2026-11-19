@@ -41,6 +41,7 @@ if TYPE_CHECKING:
     from app.models.cash_shift import CashShift
     from app.models.delivery_driver import DeliveryDriver, DeliveryTrip
     from app.models.menu import Product
+    from app.models.payment_proof import PaymentProof
     from app.models.promotion import Promotion
 
 
@@ -382,6 +383,9 @@ class Order(Base):
     delivery_driver: Mapped["DeliveryDriver | None"] = relationship("DeliveryDriver", back_populates="orders")
     trip: Mapped["DeliveryTrip | None"] = relationship("DeliveryTrip", back_populates="orders")
     cash_shift: Mapped["CashShift | None"] = relationship("CashShift", back_populates="orders", foreign_keys=[cash_shift_id])
+    payment_proof: Mapped["PaymentProof | None"] = relationship(
+        "PaymentProof", uselist=False, cascade="all, delete-orphan", passive_deletes=True
+    )
     status_events: Mapped[list["OrderStatusEvent"]] = relationship(
         "OrderStatusEvent", back_populates="order", cascade="all, delete-orphan", passive_deletes=True
     )

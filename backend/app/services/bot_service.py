@@ -10,6 +10,7 @@ import time
 
 from app.core.channels import Channel, session_key, split_session_key
 from app.core.config import settings
+from app.core.errors import BusinessRuleError, ConflictError
 from app.core.phone import normalize_phone
 from app.services.channels import CanalDeMensajeria, obtener_canal
 from app.services.chat_memory import SesionChat
@@ -30,6 +31,15 @@ MENSAJE_AUDIO_NO_ENTENDIDO = "🎤 No pude entender tu mensaje de voz. ¿Me lo p
 AVISO_AUDIO_SIN_TRANSCRIBIR = "🎤 Mensaje de voz que no se pudo transcribir."
 # Un audio ya esperó lo que tarda en transcribirse: se responde casi enseguida, sin la espera completa del agrupador.
 ESPERA_TRAS_AUDIO_SEGUNDOS = 1.5
+
+MENSAJE_COMPROBANTE_NO_DESCARGADO = (
+    "No pude recibir el archivo. ¿Me lo podés mandar de nuevo? Acepto fotos JPG, PNG, WEBP o PDF de hasta 5 MB."
+)
+MENSAJE_SIN_PEDIDO_POR_TRANSFERENCIA = (
+    "No encontré un pedido tuyo por transferencia pendiente de pago al que asociar este comprobante. "
+    "Si querés hacer un pedido, contame qué te gustaría pedir 😊"
+)
+AVISO_ARCHIVO_DERIVADO = "📎 El cliente envió una foto o un archivo."
 
 
 async def _mantener_escribiendo(canal: CanalDeMensajeria, chat_id: str) -> None:
@@ -106,6 +116,46 @@ class BotService:
             derivaciones.registrar_mensaje_del_cliente(clave, AVISO_AUDIO_SIN_TRANSCRIBIR)
         else:
             await canal_de_mensajeria.enviar_mensaje(chat_id, MENSAJE_AUDIO_NO_ENTENDIDO)
+
+    def recibir_comprobante(self, canal: Channel, chat_id: str, media_id: str) -> None:
+        """Punto de entrada de una foto o documento del cliente: es el comprobante de su último pedido por
+        transferencia. Se descarga y guarda en segundo plano."""
+        tarea = asyncio.ensure_future(self.guardar_comprobante(canal, chat_id, media_id))
+        self._transcripciones.add(tarea)
+        tarea.add_done_callback(self._transcripciones.discard)
+
+    async def guardar_comprobante(self, canal: Channel, chat_id: str, media_id: str) -> None:
+        clave = session_key(canal, chat_id)
+        canal_de_mensajeria = obtener_canal(canal)
+        if derivaciones.esta_derivado(clave):
+            # Lo atiende una persona: el empleado ve que mandó un archivo y el bot no responde.
+            derivaciones.registrar_mensaje_del_cliente(clave, AVISO_ARCHIVO_DERIVADO)
+            return
+        try:
+            archivo = await canal_de_mensajeria.descargar_archivo(media_id)
+            if archivo is None:
+                respuesta = MENSAJE_COMPROBANTE_NO_DESCARGADO
+            else:
+                respuesta = await asyncio.to_thread(self._asociar_comprobante, canal, chat_id, archivo.datos)
+        except Exception:
+            logger.exception("Error procesando el comprobante de %s", clave)
+            respuesta = MENSAJE_COMPROBANTE_NO_DESCARGADO
+        await canal_de_mensajeria.enviar_mensaje(chat_id, respuesta)
+
+    @staticmethod
+    def _asociar_comprobante(canal: Channel, chat_id: str, datos: bytes) -> str:
+        """Guarda el archivo en el último pedido por transferencia del cliente y devuelve lo que se le contesta."""
+        from app.db.session import SessionLocal
+        from app.services import payment_proof_service
+
+        with SessionLocal() as db:
+            try:
+                pedido = payment_proof_service.attach_from_chat(db, canal, chat_id, datos)
+            except (payment_proof_service.InvalidProofError, BusinessRuleError, ConflictError) as error:
+                return f"No pude guardar el comprobante. {error}"
+            if pedido is None:
+                return MENSAJE_SIN_PEDIDO_POR_TRANSFERENCIA
+            return f"✅ ¡Recibimos tu comprobante del pedido #{pedido.shift_number}! El local lo va a revisar. ¡Gracias!"
 
     def transcripcion(self, clave: str) -> list[MensajeDerivacion]:
         """Lo que el cliente y el bot se dijeron hasta ahora en el chat (vacío si el bot no lo tiene en memoria)."""

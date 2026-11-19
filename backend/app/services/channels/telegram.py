@@ -6,7 +6,13 @@ import httpx
 
 from app.core.channels import Channel
 from app.core.config import settings
-from app.services.channels.base import CanalDeMensajeria, ClienteHttpCompartido, ImagenParaEnviar
+from app.services.channels.base import (
+    MAX_BYTES_ARCHIVO,
+    ArchivoRecibido,
+    CanalDeMensajeria,
+    ClienteHttpCompartido,
+    ImagenParaEnviar,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +83,28 @@ class TelegramChannel(CanalDeMensajeria):
         except httpx.HTTPError as e:
             logger.error("Error al enviar la imagen a Telegram: %s", e)
             return False
+
+    async def descargar_archivo(self, media_id: str) -> ArchivoRecibido | None:
+        """Baja una foto o documento del cliente (Telegram da primero la ruta del archivo y después el archivo)."""
+        if not settings.TELEGRAM_TOKEN:
+            return None
+        try:
+            respuesta = await self._cliente().get(
+                f"https://api.telegram.org/bot{settings.TELEGRAM_TOKEN}/getFile", params={"file_id": media_id}
+            )
+            respuesta.raise_for_status()
+            info = respuesta.json()["result"]
+            if int(info.get("file_size") or 0) > MAX_BYTES_ARCHIVO:
+                return None
+            archivo = await self._cliente().get(f"https://api.telegram.org/file/bot{settings.TELEGRAM_TOKEN}/{info['file_path']}")
+            archivo.raise_for_status()
+        except (httpx.HTTPError, KeyError, ValueError) as e:
+            logger.error("No se pudo descargar el archivo %s de Telegram: %s", media_id, e)
+            return None
+        if len(archivo.content) > MAX_BYTES_ARCHIVO:
+            return None
+        # Telegram no informa el tipo: se reconoce por el contenido al guardarlo.
+        return ArchivoRecibido(datos=archivo.content, mime_type=archivo.headers.get("content-type") or "")
 
     async def registrar_webhook(self) -> None:
         """Apunta el webhook del bot a PUBLIC_URL. Si falla, la API levanta igual."""

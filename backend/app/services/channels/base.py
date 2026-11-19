@@ -55,6 +55,17 @@ class AudioRecibido:
     mime_type: str
 
 
+@dataclass(frozen=True)
+class ArchivoRecibido:
+    """Foto o documento (por ejemplo, el comprobante de una transferencia) que mandó un cliente, ya descargado."""
+
+    datos: bytes
+    mime_type: str
+
+
+# Los comprobantes pesan como máximo 5 MB (ver MAX_PROOF_BYTES): no se descarga nada mucho más grande.
+MAX_BYTES_ARCHIVO = 6 * 1024 * 1024
+
 # WhatsApp no acepta audios de más de 16 MB: algo más grande no es un mensaje de voz válido.
 MAX_BYTES_AUDIO = 16 * 1024 * 1024
 
@@ -82,6 +93,10 @@ class CanalDeMensajeria(ABC):
 
     async def descargar_audio(self, media_id: str) -> AudioRecibido | None:  # pylint: disable=unused-argument
         """Descarga un mensaje de voz del cliente. None si el canal no los soporta o la descarga falla."""
+        return None
+
+    async def descargar_archivo(self, media_id: str) -> ArchivoRecibido | None:  # pylint: disable=unused-argument
+        """Descarga una foto o un documento del cliente. None si el canal no los soporta o la descarga falla."""
         return None
 
     async def registrar_webhook(self) -> None:

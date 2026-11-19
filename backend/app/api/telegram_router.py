@@ -9,6 +9,23 @@ from app.services.bot_service import bot_service
 router = APIRouter()
 
 
+def _id_del_archivo(mensaje: dict) -> str | None:
+    """Id de la foto (la de mayor resolución) o del documento que mandó el cliente, si mandó alguno."""
+    fotos = mensaje.get("photo") or []
+    if fotos:
+        return fotos[-1].get("file_id")
+    return (mensaje.get("document") or {}).get("file_id")
+
+
+def _recibir_archivo(mensaje: dict) -> None:
+    archivo_id = _id_del_archivo(mensaje)
+    if not archivo_id:
+        return
+    chat_id = str(mensaje["chat"]["id"])
+    # La foto del cliente es el comprobante de su transferencia.
+    bot_service.recibir_comprobante(Channel.TELEGRAM, chat_id, archivo_id)
+
+
 @router.post("/webhook")
 async def recibir_mensaje(
     request: Request,
@@ -33,5 +50,8 @@ async def recibir_mensaje(
 
         # Responde 200 enseguida; el mensaje espera un instante por si el cliente manda más (se contestan juntos).
         bot_service.recibir_mensaje(Channel.TELEGRAM, chat_id, mensaje_usuario)
+
+    elif "message" in data:
+        _recibir_archivo(data["message"])
 
     return {"status": "ok"}

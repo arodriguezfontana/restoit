@@ -49,12 +49,8 @@ export const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = {
   mercadopago: 'MercadoPago',
 };
 
-/** Medios que se ofrecen al tomar un pedido en el mostrador. */
-export const COUNTER_PAYMENT_METHODS: PaymentMethod[] = ['efectivo', 'mercadopago'];
-
-/** Medios con los que el cliente puede pagar un pedido hecho desde la web. */
-export type WebPaymentMethod = Extract<PaymentMethod, 'efectivo' | 'mercadopago'>;
-export const WEB_PAYMENT_METHODS: WebPaymentMethod[] = ['efectivo', 'mercadopago'];
+/** Medios con los que se puede pagar un pedido hecho desde la web (los habilita el local en su configuración). */
+export type WebPaymentMethod = PaymentMethod;
 
 export interface CheckoutFormData {
   name: string;
@@ -160,6 +156,15 @@ export interface WebOrderItem {
   promotion_description?: string | null;
 }
 
+/** Comprobante de una transferencia adjuntado a un pedido (el archivo se baja aparte). */
+export interface PaymentProofInfo {
+  content_type: string;
+  size_bytes: number;
+  uploaded_at: string;
+  /** Cuándo se elimina solo. */
+  expires_at: string;
+}
+
 export interface WebOrderCreated {
   id: number;
   shift_number: number;
@@ -176,6 +181,9 @@ export interface WebOrderCreated {
   is_paid: boolean;
   /** Link de Checkout Pro de MercadoPago al que se redirige al cliente (solo si eligió MercadoPago). */
   payment_url: string | null;
+  /** Con transferencia: clave para adjuntar el comprobante sin tener cuenta. */
+  proof_upload_token?: string | null;
+  payment_proof?: PaymentProofInfo | null;
   /** Solo en pedidos de mostrador: por qué no se pudo imprimir la comanda (el pedido se guardó igual). */
   print_error?: string | null;
 }
@@ -247,6 +255,8 @@ export interface AdminOrder {
   balance_payment_method?: PaymentMethod | null;
   /** Se agregaron productos y cocina todavía no lo vio. */
   kitchen_update_pending?: boolean;
+  /** Comprobante vigente si el pedido se paga por transferencia y ya lo adjuntaron. */
+  payment_proof?: PaymentProofInfo | null;
   items?: WebOrderItem[];
   items_prepared_count?: number;
   is_all_prepared?: boolean;
