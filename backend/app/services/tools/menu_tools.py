@@ -16,8 +16,17 @@ def _nombre_de_categoria(producto) -> str:
     return producto.category.name if producto.category else "Sin categoría"
 
 
+def _restricciones(producto) -> str:
+    restricciones = getattr(producto, "dietary_restrictions", None)
+    if isinstance(restricciones, list) and restricciones:
+        limpias = [str(r).strip() for r in restricciones if str(r).strip()]
+        if limpias:
+            return f" [Apto: {', '.join(limpias)}]"
+    return ""
+
+
 def obtener_menu_actual() -> str:
-    """Listado de productos disponibles (nombre, precio, categoría y descripción), tal como están cargados en
+    """Listado de productos disponibles (nombre, precio, categoría, restricciones y descripción), tal como están cargados en
     la base: lo que se cambia en el catálogo del panel se refleja en el mensaje siguiente."""
     db = SessionLocal()
     try:
@@ -25,7 +34,8 @@ def obtener_menu_actual() -> str:
         if not productos:
             return "No hay productos disponibles en este momento."
         return "\n".join(
-            f"- {p.name} (${p.price:,.2f}) [{_nombre_de_categoria(p)}]" + (f": {p.description}" if p.description else "")
+            f"- {p.name} (${p.price:,.2f}) [{_nombre_de_categoria(p)}]{_restricciones(p)}"
+            + (f": {p.description}" if p.description else "")
             for p in productos
         )
     except Exception:
