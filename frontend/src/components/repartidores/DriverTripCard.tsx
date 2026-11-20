@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { formatDayAndTime, formatTime } from '@/utils/dateTime';
 import { formatCurrency } from '@/utils/currency';
-import { PAYMENT_METHOD_LABEL } from '@/types/order';
+import { formatOrderPaymentMethod } from '@/utils/paymentMethods';
 import type { DriverTrip } from '@/types/deliveryDriver';
 
 function TripStatusBadge({ inProgress }: { inProgress: boolean }) {
@@ -33,7 +33,7 @@ function TripOrdersTable({ orders }: { orders: DriverTrip['orders'] }) {
             <td className="py-2 px-4 font-semibold">#{order.shift_number}</td>
             <td className="py-2 px-4">{order.customer_name}</td>
             <td className="py-2 px-4 text-gray-600">{order.shipping_address}</td>
-            <td className="py-2 px-4">{order.payment_method ? PAYMENT_METHOD_LABEL[order.payment_method] : '-'}</td>
+            <td className="py-2 px-4">{order.payment_method ? formatOrderPaymentMethod(order) : '-'}</td>
             <td className="py-2 px-4 text-right font-semibold">{formatCurrency(order.total_amount)}</td>
           </tr>
         ))}

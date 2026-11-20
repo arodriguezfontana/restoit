@@ -49,3 +49,8 @@ export interface CategoryPayload {
   /** Productos que forman la categoría. Los que estaban en otra se mueven a esta. */
   product_ids: number[];
 }
+
+export interface ProductPromotionSummary {
+  id: number;
+  name: string;
+}

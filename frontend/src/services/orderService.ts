@@ -6,6 +6,7 @@ import type {
   OrderDelayEstimate,
   OrderDetail,
   OrderStatus,
+  PaymentMethod,
   PaymentProofInfo,
   PreparationSector,
   WebOrderCreated,
@@ -98,14 +99,16 @@ export async function assignDeliveryDriver(
   return data;
 }
 
-/** Actualiza manualmente el estado de cobro de un pedido (Abonado). */
+/** Actualiza manualmente el estado de cobro de un pedido (Abonado) o su medio de pago. */
 export async function updateOrderPayment(
   orderId: number,
-  isPaid: boolean = true
+  isPaid?: boolean,
+  paymentMethod?: PaymentMethod
 ): Promise<AdminOrder> {
-  const { data } = await api.patch<AdminOrder>(`/orders/${orderId}/payment`, {
-    is_paid: isPaid,
-  });
+  const payload: { is_paid?: boolean; payment_method?: PaymentMethod } = {};
+  if (isPaid !== undefined) payload.is_paid = isPaid;
+  if (paymentMethod !== undefined) payload.payment_method = paymentMethod;
+  const { data } = await api.patch<AdminOrder>(`/orders/${orderId}/payment`, payload);
   return data;
 }
 
