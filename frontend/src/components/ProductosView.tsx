@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { ProductDeleteModal } from '@/components/ProductDeleteModal';
 import { ProductFormModal } from '@/components/ProductFormModal';
 import { ProductsTable } from '@/components/ProductsTable';
 import { RecipeEditModal } from '@/components/RecipeEditModal';
@@ -7,15 +8,17 @@ import { useAsyncData } from '@/hooks/useAsyncData';
 import { useToast } from '@/hooks/useToast';
 import {
   createProduct,
+  deleteProduct,
   deleteProductImage,
   fetchAdminProducts,
   fetchCategories,
+  fetchProductPromotions,
   updateProduct,
   uploadProductImage,
 } from '@/services/catalogService';
 import { fetchIngredients, updateProductRecipe } from '@/services/ingredientService';
 import { INPUT_CLASS } from '@/styles/forms';
-import type { AdminCategory, AdminProduct, ImageChange, ProductPayload } from '@/types/catalog';
+import type { AdminCategory, AdminProduct, ImageChange, ProductPayload, ProductPromotionSummary } from '@/types/catalog';
 import type { Ingredient, RecipeItemPayload } from '@/types/ingredient';
 import { getErrorMessage } from '@/utils/errors';
 
@@ -87,6 +90,9 @@ export function ProductosView() {
   const [restrictionFilter, setRestrictionFilter] = useState(ALL);
   const [productForm, setProductForm] = useState<ProductForm>(null);
   const [recipeProduct, setRecipeProduct] = useState<AdminProduct | null>(null);
+  const [deleteProductTarget, setDeleteProductTarget] = useState<AdminProduct | null>(null);
+  const [productPromotions, setProductPromotions] = useState<ProductPromotionSummary[]>([]);
+  const [loadingPromotions, setLoadingPromotions] = useState(false);
   const toast = useToast();
 
   const availableRestrictions = useMemo(() => {
@@ -130,6 +136,35 @@ export function ProductosView() {
     upsert(updated);
     setRecipeProduct(null);
     toast.show(`Se guardó la receta de ${updated.name}.`);
+  };
+
+  const handleOpenDelete = async (product: AdminProduct) => {
+    setDeleteProductTarget(product);
+    setLoadingPromotions(true);
+    try {
+      const promos = await fetchProductPromotions(product.id);
+      setProductPromotions(promos);
+    } catch {
+      setProductPromotions([]);
+    } finally {
+      setLoadingPromotions(false);
+    }
+  };
+
+  const handleConfirmDelete = async (deletePromotions: boolean) => {
+    if (!deleteProductTarget) return;
+    await deleteProduct(deleteProductTarget.id, deletePromotions);
+    catalog.update((data) => data && {
+      ...data,
+      products: data.products.filter((p) => p.id !== deleteProductTarget.id),
+    });
+    const deletedName = deleteProductTarget.name;
+    setDeleteProductTarget(null);
+    toast.show(
+      deletePromotions
+        ? `Se eliminó el producto ${deletedName} y sus promociones asociadas.`
+        : `Se eliminó el producto ${deletedName}.`
+    );
   };
 
   const visibleProducts = products.filter((product) =>
@@ -218,7 +253,12 @@ export function ProductosView() {
         ) : visibleProducts.length === 0 ? (
           <p className="text-sm text-gray-500 text-center py-16">No hay productos que coincidan.</p>
         ) : (
-          <ProductsTable products={visibleProducts} onEdit={(product) => setProductForm({ product })} onEditRecipe={setRecipeProduct} />
+          <ProductsTable
+            products={visibleProducts}
+            onEdit={(product) => setProductForm({ product })}
+            onEditRecipe={setRecipeProduct}
+            onDelete={handleOpenDelete}
+          />
         )}
       </div>
 
@@ -238,6 +278,16 @@ export function ProductosView() {
           ingredients={ingredients}
           onClose={() => setRecipeProduct(null)}
           onSave={handleSaveRecipe}
+        />
+      )}
+
+      {deleteProductTarget && (
+        <ProductDeleteModal
+          product={deleteProductTarget}
+          promotions={productPromotions}
+          loadingPromotions={loadingPromotions}
+          onClose={() => setDeleteProductTarget(null)}
+          onConfirm={handleConfirmDelete}
         />
       )}
     </div>

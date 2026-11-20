@@ -10,8 +10,8 @@ import { formatOrderPaymentMethod } from '@/utils/paymentMethods';
 import { isPaymentProofExpired } from '@/utils/paymentProof';
 
 /** El pedido (o la diferencia de un pago parcial) se paga por transferencia. */
-function paysByTransfer(detail: OrderDetail): boolean {
-  return detail.payment_method === 'transferencia' || detail.balance_payment_method === 'transferencia';
+function paysByTransfer(paymentMethod?: string | null, balanceMethod?: string | null): boolean {
+  return paymentMethod === 'transferencia' || balanceMethod === 'transferencia';
 }
 
 function paymentStatusLabel(detail: OrderDetail): string {
@@ -19,10 +19,15 @@ function paymentStatusLabel(detail: OrderDetail): string {
   return (detail.paid_amount ?? 0) > 0 ? 'Pago parcial' : 'Pendiente de pago';
 }
 
-function PendingBalanceRows({ detail }: { detail: OrderDetail }) {
-  const balanceMethod = detail.balance_payment_method
-    ? ` (${PAYMENT_METHOD_LABEL[detail.balance_payment_method]})`
-    : ' (a definir)';
+function PendingBalanceRows({
+  detail,
+  balanceMethodOverride,
+}: {
+  detail: OrderDetail;
+  balanceMethodOverride?: PaymentMethod | null;
+}) {
+  const method = balanceMethodOverride !== undefined ? balanceMethodOverride : detail.balance_payment_method;
+  const balanceMethod = method ? ` (${PAYMENT_METHOD_LABEL[method]})` : ' (a definir)';
   return (
     <>
       <Row label="Pagado">{formatCurrency(detail.paid_amount ?? 0)}</Row>
@@ -96,6 +101,23 @@ export function BillingSection({ order, detail, isDelivery, markingPaid, onMarkA
   const [savingMethod, setSavingMethod] = useState(false);
   const [methodError, setMethodError] = useState<string | null>(null);
 
+  const [localPaymentMethod, setLocalPaymentMethod] = useState(detail?.payment_method ?? null);
+  const [localBalanceMethod, setLocalBalanceMethod] = useState(detail?.balance_payment_method ?? null);
+
+  const syncedPaymentMethod = detail?.payment_method ?? null;
+  const syncedBalanceMethod = detail?.balance_payment_method ?? null;
+  const [prevSyncedPaymentMethod, setPrevSyncedPaymentMethod] = useState(syncedPaymentMethod);
+  const [prevSyncedBalanceMethod, setPrevSyncedBalanceMethod] = useState(syncedBalanceMethod);
+
+  if (prevSyncedPaymentMethod !== syncedPaymentMethod) {
+    setPrevSyncedPaymentMethod(syncedPaymentMethod);
+    setLocalPaymentMethod(syncedPaymentMethod);
+  }
+  if (prevSyncedBalanceMethod !== syncedBalanceMethod) {
+    setPrevSyncedBalanceMethod(syncedBalanceMethod);
+    setLocalBalanceMethod(syncedBalanceMethod);
+  }
+
   const handleChangeMethod = async (newMethod: PaymentMethod) => {
     if (!detail) return;
     setSavingMethod(true);
@@ -103,9 +125,9 @@ export function BillingSection({ order, detail, isDelivery, markingPaid, onMarkA
     try {
       await updateOrderPayment(order.id, undefined, newMethod);
       if (hasPartialPayment) {
-        detail.balance_payment_method = newMethod;
+        setLocalBalanceMethod(newMethod);
       } else {
-        detail.payment_method = newMethod;
+        setLocalPaymentMethod(newMethod);
       }
       setChangingMethod(false);
     } catch {
@@ -152,8 +174,8 @@ export function BillingSection({ order, detail, isDelivery, markingPaid, onMarkA
                     aria-label="Seleccionar nuevo medio de pago"
                     defaultValue={
                       hasPartialPayment
-                        ? (detail.balance_payment_method || 'efectivo')
-                        : (detail.payment_method || 'efectivo')
+                        ? (localBalanceMethod || 'efectivo')
+                        : (localPaymentMethod || 'efectivo')
                     }
                     id="change-payment-method-select"
                     disabled={savingMethod}
@@ -186,7 +208,13 @@ export function BillingSection({ order, detail, isDelivery, markingPaid, onMarkA
                 </div>
               ) : (
                 <div className="flex items-center justify-end gap-2">
-                  <span>{formatOrderPaymentMethod(detail)}</span>
+                  <span>
+                    {formatOrderPaymentMethod({
+                      ...detail,
+                      payment_method: localPaymentMethod,
+                      balance_payment_method: localBalanceMethod,
+                    })}
+                  </span>
                   {!detail.is_paid && (
                     <button
                       type="button"
@@ -218,9 +246,11 @@ export function BillingSection({ order, detail, isDelivery, markingPaid, onMarkA
                 </button>
               </Row>
             )}
-            {hasPartialPayment && <PendingBalanceRows detail={detail} />}
+            {hasPartialPayment && (
+              <PendingBalanceRows detail={detail} balanceMethodOverride={localBalanceMethod} />
+            )}
             <PaymentStatus detail={detail} markingPaid={markingPaid} onMarkAsPaid={onMarkAsPaid} />
-            {paysByTransfer(detail) && (
+            {paysByTransfer(localPaymentMethod, localBalanceMethod) && (
               <div className="pt-2">
                 <p className="font-semibold text-gray-900 mb-1">Comprobante de la transferencia</p>
                 <PaymentProofField

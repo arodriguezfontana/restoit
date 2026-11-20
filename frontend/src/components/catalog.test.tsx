@@ -300,6 +300,107 @@ describe('ProductosView', () => {
     );
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
+
+  it('cada producto tiene un botón Eliminar en la tabla', async () => {
+    render(<ProductosView />);
+    await screen.findByText('Pizza Muzzarella', { selector: 'p' });
+
+    expect(screen.getByRole('button', { name: 'Eliminar Pizza Muzzarella' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Eliminar Coca-Cola 500ml' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Eliminar Fainá' })).toBeInTheDocument();
+  });
+
+  it('elimina un producto sin promociones tras confirmación simple', async () => {
+    catalog.fetchProductPromotions.mockResolvedValue([]);
+    catalog.deleteProduct.mockResolvedValue(undefined);
+    render(<ProductosView />);
+    const user = userEvent.setup();
+    await screen.findByText('Pizza Muzzarella', { selector: 'p' });
+
+    await user.click(screen.getByRole('button', { name: 'Eliminar Pizza Muzzarella' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Eliminar producto' });
+    expect(dialog).toBeInTheDocument();
+    expect(within(dialog).getByText(/¿Estás seguro de que querés eliminar el producto/)).toBeInTheDocument();
+    expect(within(dialog).getByText('Pizza Muzzarella')).toBeInTheDocument();
+
+    const deleteBtn = within(dialog).getByRole('button', { name: 'Eliminar' });
+    const cancelBtn = within(dialog).getByRole('button', { name: 'Cancelar' });
+    expect(deleteBtn).toBeInTheDocument();
+    expect(cancelBtn).toBeInTheDocument();
+
+    await user.click(deleteBtn);
+
+    expect(catalog.deleteProduct).toHaveBeenCalledWith(10, false);
+    expect(await screen.findByText('Se eliminó el producto Pizza Muzzarella.')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByText('Pizza Muzzarella', { selector: 'p' })).not.toBeInTheDocument();
+  });
+
+  it('muestra modal con promociones afectadas y botón Eliminar promoción y producto', async () => {
+    catalog.fetchProductPromotions.mockResolvedValue([
+      { id: 1, name: 'Promo Familiar' },
+      { id: 2, name: 'Promo Finde' },
+    ]);
+    catalog.deleteProduct.mockResolvedValue(undefined);
+    render(<ProductosView />);
+    const user = userEvent.setup();
+    await screen.findByText('Pizza Muzzarella', { selector: 'p' });
+
+    await user.click(screen.getByRole('button', { name: 'Eliminar Pizza Muzzarella' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Eliminar producto en promoción' });
+    expect(dialog).toBeInTheDocument();
+    expect(within(dialog).getByText('Promo Familiar')).toBeInTheDocument();
+    expect(within(dialog).getByText('Promo Finde')).toBeInTheDocument();
+
+    const deleteComboBtn = within(dialog).getByRole('button', { name: 'Eliminar promoción y producto' });
+    expect(deleteComboBtn).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Cancelar' })).toBeInTheDocument();
+
+    await user.click(deleteComboBtn);
+
+    expect(catalog.deleteProduct).toHaveBeenCalledWith(10, true);
+    expect(await screen.findByText('Se eliminó el producto Pizza Muzzarella y sus promociones asociadas.')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByText('Pizza Muzzarella', { selector: 'p' })).not.toBeInTheDocument();
+  });
+
+  it('cancela la eliminación si el usuario presiona Cancelar', async () => {
+    catalog.fetchProductPromotions.mockResolvedValue([]);
+    render(<ProductosView />);
+    const user = userEvent.setup();
+    await screen.findByText('Pizza Muzzarella', { selector: 'p' });
+
+    await user.click(screen.getByRole('button', { name: 'Eliminar Pizza Muzzarella' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Eliminar producto' });
+
+    await user.click(within(dialog).getByRole('button', { name: 'Cancelar' }));
+
+    expect(catalog.deleteProduct).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByText('Pizza Muzzarella', { selector: 'p' })).toBeInTheDocument();
+  });
+
+  it('muestra aviso de error si el producto está en pedidos en curso', async () => {
+    catalog.fetchProductPromotions.mockResolvedValue([]);
+    catalog.deleteProduct.mockRejectedValue(
+      new Error("No se puede eliminar 'Pizza Muzzarella' porque está incluido en pedidos en curso.")
+    );
+    render(<ProductosView />);
+    const user = userEvent.setup();
+    await screen.findByText('Pizza Muzzarella', { selector: 'p' });
+
+    await user.click(screen.getByRole('button', { name: 'Eliminar Pizza Muzzarella' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Eliminar producto' });
+
+    await user.click(within(dialog).getByRole('button', { name: 'Eliminar' }));
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      "No se puede eliminar 'Pizza Muzzarella' porque está incluido en pedidos en curso."
+    );
+    expect(dialog).toBeInTheDocument();
+  });
 });
 
 describe('CategoriasView', () => {

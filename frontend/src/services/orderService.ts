@@ -6,6 +6,7 @@ import type {
   OrderDelayEstimate,
   OrderDetail,
   OrderStatus,
+  PaymentMethod,
   PaymentProofInfo,
   PreparationSector,
   WebOrderCreated,

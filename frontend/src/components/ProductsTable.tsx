@@ -7,10 +7,11 @@ interface ProductsTableProps {
   products: AdminProduct[];
   onEdit: (product: AdminProduct) => void;
   onEditRecipe: (product: AdminProduct) => void;
+  onDelete: (product: AdminProduct) => void;
 }
 
 /** Los productos del catálogo con su categoría, precio y receta. */
-export function ProductsTable({ products, onEdit, onEditRecipe }: ProductsTableProps) {
+export function ProductsTable({ products, onEdit, onEditRecipe, onDelete }: ProductsTableProps) {
   return (
     <div className="overflow-auto lg:min-h-0">
       <table className="w-full text-left text-sm table-fixed min-w-[700px]">
@@ -102,6 +103,14 @@ export function ProductsTable({ products, onEdit, onEditRecipe }: ProductsTableP
                   className="text-xs font-semibold rounded-lg px-3 py-1.5 text-gray-700 border border-gray-300 hover:bg-gray-100"
                 >
                   Receta
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDelete(product)}
+                  aria-label={`Eliminar ${product.name}`}
+                  className="text-xs font-semibold rounded-lg px-3 py-1.5 text-red-600 hover:bg-red-50"
+                >
+                  Eliminar
                 </button>
               </td>
             </tr>

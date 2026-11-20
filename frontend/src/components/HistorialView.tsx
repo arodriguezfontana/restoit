@@ -1,7 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useAsyncData } from '@/hooks/useAsyncData';
-import type { AdminOrder, PaymentMethod } from '@/types/order';
-import { PAYMENT_METHOD_LABEL } from '@/types/order';
+import type { AdminOrder } from '@/types/order';
 import { fetchOrders } from '@/services/orderService';
 import { formatCurrency } from '@/utils/currency';
 import { formatOrderPaymentMethod } from '@/utils/paymentMethods';

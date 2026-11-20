@@ -365,7 +365,7 @@ describe('ControlCajaView', () => {
 
       const modalHeading = await screen.findByRole('heading', { name: /Detalle del turno #99/i });
       expect(modalHeading).toBeInTheDocument();
-      const modal = modalHeading.closest('div.bg-white')!;
+      const modal = modalHeading.closest('div.bg-white') as HTMLElement;
 
       expect(within(modal).getByText('Desglose por medio de pago')).toBeInTheDocument();
       expect(within(modal).getByText('Transferencia')).toBeInTheDocument();

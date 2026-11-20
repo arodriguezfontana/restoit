@@ -2,8 +2,6 @@ import { useMemo, useState } from 'react';
 import type { SubmitEvent } from 'react';
 import type { MovementForm } from '@/hooks/useCashForms';
 import type { CashMovement, CreateCashMovementPayload, MovementType, ShiftOrder } from '@/types/cashShift';
-import type { PaymentMethod } from '@/types/order';
-import { PAYMENT_METHOD_LABEL } from '@/types/order';
 import { MOVEMENT_CATEGORIES, OTHER_CATEGORY, parseAmount } from '@/utils/cashShift';
 import { formatCurrency } from '@/utils/currency';
 import { formatTime } from '@/utils/dateTime';

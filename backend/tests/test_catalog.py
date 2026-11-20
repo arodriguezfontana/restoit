@@ -363,3 +363,170 @@ def test_producto_con_adicionales_permitidos(client, db_session, muzza):
     assert len(put_res.json()["allowed_extras"]) == 1
     assert put_res.json()["allowed_extras"][0]["name"] == "Queso Cheddar"
 
+
+# --- Eliminación de productos (US-63) -----------------------------------------------------------------
+
+
+def test_eliminar_producto_sin_promociones_y_sin_pedidos_lo_elimina_completamente(client, db_session, muzza):
+    from app.models.menu import Ingredient, ProductIngredient
+
+    ing = Ingredient(name="Salsa de Tomate", unit="litros")
+    db_session.add(ing)
+    db_session.commit()
+
+    muzza.recipe_items.append(ProductIngredient(ingredient=ing, quantity=0.2))
+    muzza.replace_image(PNG, now=datetime.now(timezone.utc))
+    db_session.commit()
+    prod_id = muzza.id
+
+    res = client.delete(f"{PRODUCTS_URL}/{prod_id}")
+    assert res.status_code == 204
+
+    # No aparece en menú público ni en listado admin
+    assert all(p["id"] != prod_id for p in client.get(MENU_URL).json())
+    assert all(p["id"] != prod_id for p in client.get(PRODUCTS_URL).json())
+
+    # Se borró físicamente de la base
+    db_session.expire_all()
+    assert db_session.get(Product, prod_id) is None
+
+
+def test_eliminar_producto_en_promociones_sin_confirmar_falla_con_409(client, db_session, muzza):
+    from app.models.promotion import Promotion, PromotionProduct
+
+    promo = Promotion(name="Promo Dupla", price=15000, is_active=True)
+    promo.items = [PromotionProduct(product=muzza, quantity=2)]
+    db_session.add(promo)
+    db_session.commit()
+
+    # Consultar promociones del producto
+    res_promos = client.get(f"{PRODUCTS_URL}/{muzza.id}/promotions")
+    assert res_promos.status_code == 200
+    assert res_promos.json() == [{"id": promo.id, "name": "Promo Dupla"}]
+
+    # Intentar eliminar sin delete_promotions=True
+    res_delete = client.delete(f"{PRODUCTS_URL}/{muzza.id}")
+    assert res_delete.status_code == 409
+    assert "Promo Dupla" in res_delete.json()["detail"]
+
+    # El producto y la promo siguen existiendo
+    assert db_session.get(Product, muzza.id) is not None
+    assert db_session.get(Promotion, promo.id) is not None
+
+
+def test_eliminar_producto_en_promociones_con_confirmacion_elimina_todo_junto(client, db_session, muzza):
+    from app.models.promotion import Promotion, PromotionProduct
+
+    promo = Promotion(name="Promo Trío", price=20000, is_active=True)
+    promo.items = [PromotionProduct(product=muzza, quantity=3)]
+    db_session.add(promo)
+    db_session.commit()
+    promo_id = promo.id
+    prod_id = muzza.id
+
+    res_delete = client.delete(f"{PRODUCTS_URL}/{prod_id}?delete_promotions=true")
+    assert res_delete.status_code == 204
+
+    # Ambos eliminados
+    db_session.expire_all()
+    assert db_session.get(Product, prod_id) is None
+    assert db_session.get(Promotion, promo_id) is None
+
+
+def test_eliminar_producto_en_pedidos_en_curso_falla_con_400(client, db_session, muzza):
+    from app.models.order import Order, OrderItem, OrderStatus
+
+    order = Order(
+        customer_name="Juan Perez",
+        delivery_address="Calle Falsa 123",
+        status=OrderStatus.CONFIRMED.value,
+        total=muzza.price,
+    )
+    order.items = [OrderItem(product=muzza, quantity=1, unit_price=muzza.price)]
+    db_session.add(order)
+    db_session.commit()
+
+    res = client.delete(f"{PRODUCTS_URL}/{muzza.id}")
+    assert res.status_code == 400
+    assert "pedidos en curso" in res.json()["detail"].lower()
+
+    # El producto sigue existiendo
+    assert db_session.get(Product, muzza.id) is not None
+
+
+def test_eliminar_producto_en_promocion_con_pedidos_en_curso_falla_con_400(client, db_session, muzza):
+    from app.models.order import Order, OrderItem, OrderStatus
+    from app.models.promotion import Promotion, PromotionProduct
+
+    promo = Promotion(name="Combo Activo", price=12000, is_active=True)
+    promo.items = [PromotionProduct(product=muzza, quantity=1)]
+    db_session.add(promo)
+    db_session.commit()
+
+    order = Order(
+        customer_name="Ana Lopez",
+        delivery_address="Av Siempre Viva 742",
+        status=OrderStatus.PENDING.value,
+        total=promo.price,
+    )
+    order.items = [OrderItem(promotion=promo, quantity=1, unit_price=promo.price)]
+    db_session.add(order)
+    db_session.commit()
+
+    res = client.delete(f"{PRODUCTS_URL}/{muzza.id}?delete_promotions=true")
+    assert res.status_code == 400
+    assert "pedidos en curso" in res.json()["detail"].lower()
+
+    # No se eliminó nada
+    assert db_session.get(Product, muzza.id) is not None
+    assert db_session.get(Promotion, promo.id) is not None
+
+
+def test_eliminar_producto_con_pedidos_historicos_lo_archiva_manteniendo_datos_historicos(client, db_session, muzza):
+    from app.models.menu import Ingredient, ProductIngredient
+    from app.models.order import Order, OrderItem, OrderStatus
+
+    ing = Ingredient(name="Queso Muzzarella Especial", unit="kg")
+    db_session.add(ing)
+    db_session.commit()
+
+    muzza.recipe_items.append(ProductIngredient(ingredient=ing, quantity=0.3))
+    muzza.replace_image(PNG, now=datetime.now(timezone.utc))
+    db_session.commit()
+
+    order = Order(
+        customer_name="Cliente Antiguo",
+        delivery_address="Retiro en el local",
+        status=OrderStatus.COMPLETED.value,
+        total=muzza.price,
+    )
+    item = OrderItem(product=muzza, quantity=2, unit_price=muzza.price)
+    order.items = [item]
+    db_session.add(order)
+    db_session.commit()
+
+    prod_id = muzza.id
+    order_id = order.id
+
+    res = client.delete(f"{PRODUCTS_URL}/{prod_id}")
+    assert res.status_code == 204
+
+    db_session.expire_all()
+    archived = db_session.get(Product, prod_id)
+    assert archived is not None
+    assert archived.is_archived is True
+    assert archived.is_active is False
+    assert archived.category_id is None
+    # Imagen y receta eliminadas
+    assert archived.image is None
+    assert len(archived.recipe_items) == 0
+
+    # No aparece en menú público ni en admin
+    assert all(p["id"] != prod_id for p in client.get(MENU_URL).json())
+    assert all(p["id"] != prod_id for p in client.get(PRODUCTS_URL).json())
+
+    # Pero el pedido histórico sigue mostrando el nombre del producto correctamente
+    order_in_db = db_session.get(Order, order_id)
+    assert order_in_db.items[0].display_name == "Pizza Muzzarella"
+
+
