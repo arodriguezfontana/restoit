@@ -84,6 +84,8 @@ class PaymentMethod(_StrEnum):
 class EstimateSource(_StrEnum):
     # Promedio de pedidos parecidos ya entregados (modo inteligente).
     SMART = "smart"
+    # Regla de demora fija del método de entrega configurada por el local.
+    FIXED = "fixed"
     # La indicó el personal al aceptar el pedido.
     MANUAL = "manual"
     # Demora estándar del local, cuando no hay quien la indique (pedidos que entran ya aceptados).

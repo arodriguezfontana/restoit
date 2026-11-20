@@ -34,6 +34,13 @@ const CHANNEL_LABEL: Record<NonNullable<AdminOrder['channel']>, string> = {
   whatsapp: 'WhatsApp',
 };
 
+const ESTIMATE_SOURCE_LABEL = {
+  smart: 'Inteligente',
+  fixed: 'Regla fija',
+  manual: 'Manual',
+  default: 'Estándar',
+} as const;
+
 function originLabel(order: AdminOrder): string {
   const source = SOURCE_LABEL[order.source] ?? order.source;
   return order.channel ? `${source} · ${CHANNEL_LABEL[order.channel] ?? order.channel}` : source;
@@ -48,7 +55,14 @@ function ScheduleRow({ order }: { order: AdminOrder }) {
       </Row>
     );
   }
-  return order.estimated_minutes != null ? <Row label="Demora estimada">{order.estimated_minutes} min</Row> : null;
+  if (order.estimated_minutes == null) return null;
+  const origin = order.estimate_source ? ESTIMATE_SOURCE_LABEL[order.estimate_source] : null;
+  return (
+    <>
+      <Row label="Demora estimada">{order.estimated_minutes} min</Row>
+      {origin && <Row label="Origen de la demora">{origin}</Row>}
+    </>
+  );
 }
 
 function CustomerSection({ order, isDelivery }: { order: AdminOrder; isDelivery: boolean }) {

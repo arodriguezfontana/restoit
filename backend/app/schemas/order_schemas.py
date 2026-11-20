@@ -127,9 +127,9 @@ class OrderResponse(BaseModel):
 class OrderDelayEstimateResponse(BaseModel):
     """Cómo se estimará la demora al aceptar un pedido."""
 
-    # "smart": la calcula el sistema con el historial; "manual": la tiene que indicar el empleado.
-    mode: Literal["smart", "manual"]
-    # Demora calculada (solo en modo inteligente).
+    # "smart": la calcula el sistema con el historial; "fixed": sale de una regla fija; "manual": la indica el empleado.
+    mode: Literal["smart", "fixed", "manual"]
+    # Demora calculada (solo en modo inteligente o con regla fija).
     estimated_minutes: int | None = None
     # Pedidos parecidos con los que se calculó, o los que hay hasta ahora, y los que se necesitan.
     samples: int

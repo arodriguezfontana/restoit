@@ -6,8 +6,8 @@ import { fetchOrderDelayEstimate } from '@/services/orderService';
 export const ESTIMATE_REFRESH_INTERVAL_MS = 15000;
 
 /**
- * La demora estimada con la que se aceptaría un pedido pendiente para ahora: sale del historial del local o,
- * si todavía no hay datos, la tiene que indicar el empleado.
+ * La demora estimada con la que se aceptaría un pedido pendiente para ahora: sale del historial del local o de una regla
+ * fija y, si no hay ninguna aplicable, la tiene que indicar el empleado.
  */
 export function useOrderEstimate(orderId: number, needsEstimate: boolean) {
   const loadEstimate = useMemo(
@@ -24,12 +24,12 @@ export function useOrderEstimate(orderId: number, needsEstimate: boolean) {
     return () => clearInterval(intervalId);
   }, [needsEstimate, reload]);
 
-  const smartMinutes = estimate?.mode === 'smart' ? estimate.estimated_minutes : null;
+  const autoMinutes = estimate?.mode === 'smart' || estimate?.mode === 'fixed' ? estimate.estimated_minutes : null;
   return {
     estimate,
     estimateLoading,
-    smartMinutes,
+    autoMinutes,
     // Sin estimación automática (o si no se pudo consultar) el empleado tiene que cargar la demora.
-    manualRequired: needsEstimate && !estimateLoading && smartMinutes == null,
+    manualRequired: needsEstimate && !estimateLoading && autoMinutes == null,
   };
 }

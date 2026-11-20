@@ -65,11 +65,11 @@ class CounterPayment:
 
 
 class ManualEstimateRequiredError(BusinessRuleError):
-    """Todavía no hay historial suficiente para estimar la demora de este pedido: la tiene que indicar el personal."""
+    """No hay una demora automática aplicable a este pedido (historial o regla fija): la tiene que indicar el personal."""
 
     def __init__(self):
         super().__init__(
-            "Todavía no hay datos suficientes para estimar la demora de este pedido: indicá el tiempo estimado en minutos."
+            "No hay una demora automática para este pedido: indicá el tiempo estimado en minutos."
         )
 
 
@@ -98,16 +98,16 @@ def current_queue_size(db: Session) -> int:
 
 
 def estimate_acceptance_delay(db: Session, order: Order) -> DelayEstimate:
-    """Cómo se va a estimar la demora de este pedido si se acepta ahora (inteligente o manual)."""
+    """Cómo se va a estimar la demora de este pedido si se acepta ahora (inteligente, regla fija o manual)."""
     return estimate_delay(db, order.delivery_method, current_queue_size(db))
 
 
 def _delay_for_new_confirmed_order(db: Session, delivery_method: DeliveryMethod | str) -> tuple[int, EstimateSource]:
     """Demora de un pedido que entra ya aceptado (web y mostrador), sin personal que la indique: la del historial
-    si alcanza y, si no, la estándar."""
+    si alcanza, la regla fija que corresponda y, si no, la estándar."""
     estimate = estimate_delay(db, delivery_method, current_queue_size(db))
     if estimate.minutes is not None:
-        return estimate.minutes, EstimateSource.SMART
+        return estimate.minutes, EstimateSource.SMART if estimate.is_smart else EstimateSource.FIXED
     return estimate_delay_minutes(db), EstimateSource.DEFAULT
 
 
@@ -408,12 +408,13 @@ def _find_active_driver(db: Session, delivery_driver_id: int) -> DeliveryDriver:
     return driver
 
 
-def _smart_estimate_for_acceptance(
+def _automatic_estimate_for_acceptance(
     db: Session, order: Order, new_status: OrderStatus | str, estimated_minutes: int | None
-) -> int | None:
-    """Demora del historial del local con la que se acepta un pedido pendiente cuando el personal no la indica.
+) -> tuple[int, EstimateSource] | None:
+    """Demora automática (historial o regla fija) con la que se acepta un pedido pendiente cuando el personal no
+    la indica.
 
-    Devuelve None si el pedido no se está aceptando (o ya trae demora); si todavía no hay historial suficiente,
+    Devuelve None si el pedido no se está aceptando (o ya trae demora); si no hay demora automática aplicable,
     la tiene que indicar el personal.
     """
     is_acceptance = (
@@ -425,9 +426,9 @@ def _smart_estimate_for_acceptance(
     if not is_acceptance:
         return None
     estimate = estimate_acceptance_delay(db, order)
-    if not estimate.is_smart:
+    if estimate.minutes is None:
         raise ManualEstimateRequiredError()
-    return estimate.minutes
+    return estimate.minutes, EstimateSource.SMART if estimate.is_smart else EstimateSource.FIXED
 
 
 def change_order_status(
@@ -444,16 +445,16 @@ def change_order_status(
         _require_driver_change_allowed(order)
         driver = _find_active_driver(db, delivery_driver_id)
 
-    # Al aceptar el pedido la demora sale del historial del local; si todavía no alcanza, la indica el personal.
-    smart_minutes = _smart_estimate_for_acceptance(db, order, new_status, estimated_minutes)
-    estimate_source = None if smart_minutes is None else EstimateSource.SMART
+    # Al aceptar el pedido la demora sale del historial o de la regla fija del local; si no hay, la indica el personal.
+    automatic = _automatic_estimate_for_acceptance(db, order, new_status, estimated_minutes)
+    automatic_minutes, estimate_source = automatic if automatic else (None, None)
 
     with transaction(db):
         if driver is not None:
             order.delivery_driver_id = driver.id
         order.transition_to(
             new_status,
-            estimated_minutes if smart_minutes is None else smart_minutes,
+            estimated_minutes if automatic_minutes is None else automatic_minutes,
             current_delay_minutes=estimate_delay_minutes(db),
             estimate_source=estimate_source,
         )

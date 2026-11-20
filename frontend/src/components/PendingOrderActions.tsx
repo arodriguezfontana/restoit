@@ -22,11 +22,11 @@ export function PendingOrderActions({ order, simulated, pending, onAction }: Pen
   const isScheduled = order.scheduled_for != null;
   // Al aceptar un pedido para ahora, la demora sale del historial del local o, si todavía no hay datos, la indica el empleado.
   const needsEstimate = !isScheduled && !simulated;
-  const { estimate, estimateLoading, smartMinutes, manualRequired } = useOrderEstimate(order.id, needsEstimate);
+  const { estimate, estimateLoading, autoMinutes, manualRequired } = useOrderEstimate(order.id, needsEstimate);
   const parsedMinutes = Number(estimatedMinutesInput);
   const hasValidMinutes = estimatedMinutesInput.trim() !== '' && Number.isInteger(parsedMinutes) && parsedMinutes > 0;
   // El campo de minutos se pide siempre sin estimación automática, y a pedido del empleado si quiere cambiarla.
-  const showMinutesInput = manualRequired || (smartMinutes != null && changingDelay);
+  const showMinutesInput = manualRequired || (autoMinutes != null && changingDelay);
   const canConfirm = !(needsEstimate && estimateLoading) && (!showMinutesInput || hasValidMinutes);
 
   return (
@@ -37,11 +37,13 @@ export function PendingOrderActions({ order, simulated, pending, onAction }: Pen
             Calculando demora estimada...
           </p>
         )}
-        {smartMinutes != null && !changingDelay && (
+        {autoMinutes != null && !changingDelay && (
           <div className="flex items-center justify-between gap-3 rounded-xl bg-emerald-50 px-3 py-2">
             <div role="status" className="leading-tight">
-              <p className="text-[11px] text-emerald-700">Demora estimada</p>
-              <p className="text-base font-bold text-emerald-900">{smartMinutes} min</p>
+              <p className="text-[11px] text-emerald-700">
+                Demora estimada{estimate?.mode === 'fixed' ? ' (regla fija)' : ''}
+              </p>
+              <p className="text-base font-bold text-emerald-900">{autoMinutes} min</p>
             </div>
             <button
               type="button"
@@ -53,7 +55,7 @@ export function PendingOrderActions({ order, simulated, pending, onAction }: Pen
             </button>
           </div>
         )}
-        {smartMinutes != null && changingDelay && (
+        {autoMinutes != null && changingDelay && (
           <div className="space-y-1">
             <input
               type="number"
@@ -62,7 +64,7 @@ export function PendingOrderActions({ order, simulated, pending, onAction }: Pen
               required
               autoFocus
               aria-label="Demora estimada en minutos"
-              placeholder={`Minutos (automática: ${smartMinutes})`}
+              placeholder={`Minutos (automática: ${autoMinutes})`}
               value={estimatedMinutesInput}
               onChange={(e) => setEstimatedMinutesInput(e.target.value)}
               className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-black bg-gray-50/50"
@@ -94,8 +96,8 @@ export function PendingOrderActions({ order, simulated, pending, onAction }: Pen
             />
             {estimate && (
               <p className="text-[11px] text-gray-500">
-                Todavía no hay datos suficientes para estimarla ({estimate.samples} de {estimate.min_samples} pedidos
-                similares).
+                No hay una demora automática para este pedido
+                {estimate.samples > 0 ? ` (${estimate.samples} de ${estimate.min_samples} pedidos similares)` : ''}.
               </p>
             )}
           </div>

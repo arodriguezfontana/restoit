@@ -15,6 +15,7 @@ from app.api import (
     chat_router,
     client_router,
     customer_router,
+    delay_rule_router,
     delivery_driver_router,
     handoff_router,
     ingredient_router,
@@ -92,6 +93,7 @@ api_router.include_router(category_router.router, prefix="/categories", tags=["C
 api_router.include_router(chat_router.router, prefix="/chat", tags=["Chatbot"])
 api_router.include_router(client_router.router, prefix="/clients", tags=["Clients"])
 api_router.include_router(customer_router.router, prefix="/customers", tags=["Customers"])
+api_router.include_router(delay_rule_router.router, prefix="/delay-settings", tags=["Delay settings"])
 api_router.include_router(delivery_driver_router.router, prefix="/delivery-drivers", tags=["Delivery Drivers"])
 api_router.include_router(handoff_router.router, prefix="/handoffs", tags=["Handoffs"])
 api_router.include_router(ingredient_router.router, prefix="/ingredients", tags=["Ingredients"])

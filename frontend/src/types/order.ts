@@ -235,7 +235,7 @@ export interface AdminOrder {
   notes: string | null;
   estimated_minutes: number | null;
   /** De dónde salió la demora: historial del local, la cargó el personal o la estándar. */
-  estimate_source?: 'smart' | 'manual' | 'default' | null;
+  estimate_source?: 'smart' | 'fixed' | 'manual' | 'default' | null;
   /** Demora real en minutos (desde que ingresó hasta que se finalizó); vacía mientras el pedido no terminó. */
   actual_minutes?: number | null;
   scheduled_for: string | null;
@@ -276,8 +276,8 @@ export interface OrderDetail extends AdminOrder {
 
 /** Cómo se estimará la demora al aceptar un pedido. */
 export interface OrderDelayEstimate {
-  /** 'smart': la calcula el sistema con el historial del local; 'manual': la tiene que indicar el empleado. */
-  mode: 'smart' | 'manual';
+  /** 'smart': la calcula el sistema con el historial del local; 'fixed': sale de una regla fija; 'manual': la indica el empleado. */
+  mode: 'smart' | 'fixed' | 'manual';
   estimated_minutes: number | null;
   /** Pedidos parecidos con los que se calculó (o los que hay hasta ahora) y los que hacen falta. */
   samples: number;
