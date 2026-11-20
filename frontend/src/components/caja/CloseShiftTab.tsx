@@ -118,7 +118,7 @@ export function CloseShiftTab({ form, expectedCash, onClose }: CloseShiftTabProp
         <div className="bg-gray-50 rounded-xl p-4 space-y-4 border border-gray-200">
           <div className="flex justify-between items-center text-sm">
             <span className="text-gray-600 font-medium">Caja teórica esperada:</span>
-            <span className="font-extrabold text-gray-900 text-base">{formatCurrency(expectedCash)}</span>
+            <span className="font-extrabold text-emerald-700 text-base">{formatCurrency(expectedCash)}</span>
           </div>
 
           <div>

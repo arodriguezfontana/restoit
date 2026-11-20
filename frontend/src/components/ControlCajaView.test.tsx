@@ -315,7 +315,7 @@ describe('ControlCajaView', () => {
       expect(screen.getByText(/MercadoPago:/)).toBeInTheDocument();
       expect(screen.getByText(/Transferencia:/)).toBeInTheDocument();
       expect(screen.getByText(/Tarjeta:/)).toBeInTheDocument();
-      expect(screen.getByText(/Pendiente de cobro:/)).toBeInTheDocument();
+      expect(screen.getByText('Pendiente de cobro')).toBeInTheDocument();
       expect(screen.getByText(/\$ 4\.000,00/)).toBeInTheDocument();
 
       // El efectivo esperado para el arqueo es 15.000,00 (no incluye los 6.500 de digitales ni los 4.000 de pendientes)

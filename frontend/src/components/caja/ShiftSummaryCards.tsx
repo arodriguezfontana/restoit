@@ -37,23 +37,20 @@ function DigitalSales({
           <span>
             Tarjeta: <strong className="text-gray-900">{formatCurrency(summary?.tarjeta_sales ?? 0)}</strong>
           </span>
-          <span>·</span>
-          <span className={pendingTransfers > 0 ? 'text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md font-semibold' : ''}>
-            Pendiente de cobro:{' '}
-            <strong className={pendingTransfers > 0 ? 'text-amber-900' : 'text-gray-900'}>
-              {formatCurrency(pendingTransfers)}
-            </strong>
-          </span>
         </div>
       </div>
 
       <div className="flex items-center gap-6 border-t md:border-t-0 md:border-l border-gray-200 pt-3 md:pt-0 md:pl-6 shrink-0">
         <div>
-          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Total digital</div>
-          <div className="text-sm font-bold text-gray-900">{formatCurrency(summary?.total_digital_sales ?? 0)}</div>
+          <div className="text-[10px] font-bold uppercase tracking-wider text-orange-600">Pendiente de cobro</div>
+          <div className="text-sm font-bold text-orange-600">{formatCurrency(pendingTransfers)}</div>
         </div>
         <div>
-          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Total facturado</div>
+          <div className="text-[10px] font-bold uppercase tracking-wider text-blue-600">Total digital</div>
+          <div className="text-sm font-bold text-blue-600">{formatCurrency(summary?.total_digital_sales ?? 0)}</div>
+        </div>
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-900">Total facturado</div>
           <div className="text-base font-extrabold text-gray-900">{formatCurrency(summary?.total_sales ?? 0)}</div>
         </div>
       </div>
@@ -99,8 +96,8 @@ export function ShiftSummaryCards({ shift }: ShiftSummaryCardsProps) {
           value={`-${formatCurrency(summary?.manual_expense ?? 0)}`}
           valueClass="text-rose-600"
         />
-        <div className="col-span-2 md:col-span-1 bg-zinc-900 text-white rounded-2xl p-4 shadow-md flex flex-col justify-between">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-300">Caja teórica esperada</span>
+        <div className="col-span-2 md:col-span-1 bg-emerald-600 text-white rounded-2xl p-4 shadow-md flex flex-col justify-between">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-100">Caja teórica esperada</span>
           <span className="text-xl md:text-2xl font-black text-white mt-2">
             {formatCurrency(summary?.expected_cash ?? 0)}
           </span>

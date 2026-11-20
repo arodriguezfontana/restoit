@@ -63,6 +63,21 @@ describe('PaymentProofField', () => {
 
     await waitFor(() => expect(onChange).toHaveBeenCalledWith(null));
   });
+
+  it('el personal puede ver el comprobante en un modal tocando el botón Ver o la miniatura', async () => {
+    service.fetchPaymentProofFile.mockResolvedValue(new Blob(['img'], { type: 'image/jpeg' }));
+    render(<PaymentProofField orderId={7} proof={PROOF} onChange={vi.fn()} staff />);
+
+    expect(screen.getByLabelText('Ver vista previa del comprobante')).toBeInTheDocument();
+    const verBtn = screen.getByRole('button', { name: 'Ver' });
+    expect(verBtn).toBeInTheDocument();
+
+    await userEvent.setup().click(verBtn);
+
+    expect(await screen.findByRole('dialog', { name: 'Comprobante de pago' })).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Cerrar comprobante' }));
+    expect(screen.queryByRole('dialog', { name: 'Comprobante de pago' })).not.toBeInTheDocument();
+  });
 });
 
 describe('CopyButton', () => {

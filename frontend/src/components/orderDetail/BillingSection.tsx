@@ -52,8 +52,10 @@ function PaymentStatus({ detail, markingPaid, onMarkAsPaid }: PaymentStatusProps
     <Row label="Estado del pago">
       <div className="flex items-center justify-end gap-2">
         <span
-          className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-            detail.is_paid ? 'bg-green-100 text-green-800' : 'bg-sky-100 text-sky-800'
+          className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${
+            detail.is_paid
+              ? 'bg-green-100 text-green-800'
+              : 'bg-sky-50 text-sky-800 border border-sky-200'
           }`}
         >
           {paymentStatusLabel(detail)}
@@ -219,9 +221,14 @@ export function BillingSection({ order, detail, isDelivery, markingPaid, onMarkA
                     <button
                       type="button"
                       onClick={() => setChangingMethod(true)}
-                      className="text-xs text-blue-600 hover:text-blue-800 underline font-medium cursor-pointer"
+                      aria-label="Cambiar"
+                      title="Cambiar medio de pago"
+                      className="p-1 text-gray-500 hover:text-gray-900 rounded-lg hover:bg-gray-100 transition cursor-pointer"
                     >
-                      Cambiar
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4" aria-hidden="true">
+                        <path d="m5.433 13.917 1.262-3.155A4 4 0 0 1 7.58 9.42l6.92-6.918a2.121 2.121 0 0 1 3 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 0 1-.65-.65Z" />
+                        <path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25H10A.75.75 0 0 0 10 3H4.75A2.75 2.75 0 0 0 2 5.75v9.5A2.75 2.75 0 0 0 4.75 18h9.5A2.75 2.75 0 0 0 17 15.25V10a.75.75 0 0 0-1.5 0v5.25c0 .69-.56 1.25-1.25 1.25h-9.5c-.69 0-1.25-.56-1.25-1.25v-9.5Z" />
+                      </svg>
                     </button>
                   )}
                 </div>
@@ -232,18 +239,41 @@ export function BillingSection({ order, detail, isDelivery, markingPaid, onMarkA
             )}
             {!isExpired && (
               <Row label="Comprobante">
-                <button
-                  type="button"
-                  onClick={handleViewProof}
-                  disabled={!hasProof}
-                  className={`text-xs font-semibold px-2.5 py-1 rounded-lg transition ${
-                    hasProof
-                      ? 'bg-zinc-900 hover:bg-zinc-800 text-white cursor-pointer shadow-xs'
-                      : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  }`}
-                >
-                  {hasProof ? 'Comprobante' : 'Sin Comprobante'}
-                </button>
+                <div className="flex items-center gap-2">
+                  {hasProof && (
+                    <button
+                      type="button"
+                      onClick={handleViewProof}
+                      aria-label="Ver miniatura del comprobante"
+                      title="Ver comprobante"
+                      className="w-7 h-7 rounded-md border border-gray-200 overflow-hidden cursor-pointer hover:ring-2 hover:ring-zinc-900 transition shadow-2xs shrink-0 bg-gray-50 flex items-center justify-center"
+                    >
+                      {proof?.content_type === 'application/pdf' ? (
+                        <span className="text-[9px] font-bold text-red-600">PDF</span>
+                      ) : proofUrl ? (
+                        <img
+                          src={proofUrl}
+                          alt="Miniatura del comprobante"
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <span className="text-[9px] text-gray-400">...</span>
+                      )}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleViewProof}
+                    disabled={!hasProof}
+                    className={`text-xs font-semibold px-2.5 py-1 rounded-lg transition ${
+                      hasProof
+                        ? 'bg-zinc-900 hover:bg-zinc-800 text-white cursor-pointer shadow-xs'
+                        : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    }`}
+                  >
+                    {hasProof ? 'Comprobante' : 'Sin Comprobante'}
+                  </button>
+                </div>
               </Row>
             )}
             {hasPartialPayment && (
