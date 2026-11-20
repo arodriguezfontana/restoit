@@ -498,7 +498,9 @@ def test_resumen_desglosa_medios_y_transferencia_sin_confirmar_aparece_como_pend
 
 
 def test_cambio_de_medio_de_pago_y_pago_parcial(client, db_session, open_shift):
-    order = _pedido_listo(db_session, open_shift, payment_method="efectivo", total=5000.0, is_paid=False)
+    order = _pedido_listo(
+        db_session, open_shift, payment_method="efectivo", total=5000.0, is_paid=False, status="Confirmado"
+    )
 
     # Cambiar medio de pago a tarjeta
     cambio = client.patch(f"/api/v1/orders/{order.id}/payment", json={"payment_method": "tarjeta"})

@@ -438,9 +438,9 @@ def test_eliminar_producto_en_pedidos_en_curso_falla_con_400(client, db_session,
 
     order = Order(
         customer_name="Juan Perez",
-        delivery_address="Calle Falsa 123",
+        shipping_address="Calle Falsa 123",
         status=OrderStatus.CONFIRMED.value,
-        total=muzza.price,
+        total_amount=muzza.price,
     )
     order.items = [OrderItem(product=muzza, quantity=1, unit_price=muzza.price)]
     db_session.add(order)
@@ -465,9 +465,9 @@ def test_eliminar_producto_en_promocion_con_pedidos_en_curso_falla_con_400(clien
 
     order = Order(
         customer_name="Ana Lopez",
-        delivery_address="Av Siempre Viva 742",
+        shipping_address="Av Siempre Viva 742",
         status=OrderStatus.PENDING.value,
-        total=promo.price,
+        total_amount=promo.price,
     )
     order.items = [OrderItem(promotion=promo, quantity=1, unit_price=promo.price)]
     db_session.add(order)
@@ -496,9 +496,9 @@ def test_eliminar_producto_con_pedidos_historicos_lo_archiva_manteniendo_datos_h
 
     order = Order(
         customer_name="Cliente Antiguo",
-        delivery_address="Retiro en el local",
+        shipping_address="Retiro en el local",
         status=OrderStatus.COMPLETED.value,
-        total=muzza.price,
+        total_amount=muzza.price,
     )
     item = OrderItem(product=muzza, quantity=2, unit_price=muzza.price)
     order.items = [item]
