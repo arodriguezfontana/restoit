@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { PaymentProofField } from '@/components/PaymentProofField';
 import { Row, Section } from '@/components/orderDetail/DetailLayout';
 import { PaymentProofModal } from '@/components/orderDetail/PaymentProofModal';
-import { fetchPaymentProofFile } from '@/services/orderService';
+import { fetchPaymentProofFile, updateOrderPayment } from '@/services/orderService';
 import { PAYMENT_METHOD_LABEL } from '@/types/order';
-import type { AdminOrder, OrderDetail, PaymentProofInfo } from '@/types/order';
+import type { AdminOrder, OrderDetail, PaymentMethod, PaymentProofInfo } from '@/types/order';
 import { formatCurrency } from '@/utils/currency';
+import { formatOrderPaymentMethod } from '@/utils/paymentMethods';
 import { isPaymentProofExpired } from '@/utils/paymentProof';
 
 /** El pedido (o la diferencia de un pago parcial) se paga por transferencia. */
@@ -91,6 +92,28 @@ export function BillingSection({ order, detail, isDelivery, markingPaid, onMarkA
   const hasProof = Boolean(proof) && !isExpired;
   const [viewingProof, setViewingProof] = useState(false);
   const [proofUrl, setProofUrl] = useState<string | null>(null);
+  const [changingMethod, setChangingMethod] = useState(false);
+  const [savingMethod, setSavingMethod] = useState(false);
+  const [methodError, setMethodError] = useState<string | null>(null);
+
+  const handleChangeMethod = async (newMethod: PaymentMethod) => {
+    if (!detail) return;
+    setSavingMethod(true);
+    setMethodError(null);
+    try {
+      await updateOrderPayment(order.id, undefined, newMethod);
+      if (hasPartialPayment) {
+        detail.balance_payment_method = newMethod;
+      } else {
+        detail.payment_method = newMethod;
+      }
+      setChangingMethod(false);
+    } catch {
+      setMethodError('No se pudo cambiar el medio de pago.');
+    } finally {
+      setSavingMethod(false);
+    }
+  };
 
   const handleProofChange = (newProof: PaymentProofInfo | null) => {
     setProof(newProof);
@@ -123,8 +146,62 @@ export function BillingSection({ order, detail, isDelivery, markingPaid, onMarkA
               </Row>
             )}
             <Row label="Método de pago">
-              {detail.payment_method ? PAYMENT_METHOD_LABEL[detail.payment_method] : 'No informado'}
+              {changingMethod ? (
+                <div className="flex items-center gap-1.5 justify-end flex-wrap">
+                  <select
+                    aria-label="Seleccionar nuevo medio de pago"
+                    defaultValue={
+                      hasPartialPayment
+                        ? (detail.balance_payment_method || 'efectivo')
+                        : (detail.payment_method || 'efectivo')
+                    }
+                    id="change-payment-method-select"
+                    disabled={savingMethod}
+                    className="text-xs px-2 py-1 rounded-lg border border-gray-300 bg-white"
+                  >
+                    <option value="efectivo">Efectivo</option>
+                    <option value="mercadopago">MercadoPago</option>
+                    <option value="transferencia">Transferencia</option>
+                    <option value="tarjeta">Tarjeta</option>
+                  </select>
+                  <button
+                    type="button"
+                    disabled={savingMethod}
+                    onClick={() => {
+                      const select = document.getElementById('change-payment-method-select') as HTMLSelectElement;
+                      if (select) handleChangeMethod(select.value as PaymentMethod);
+                    }}
+                    className="text-xs px-2 py-1 rounded-lg bg-zinc-900 text-white font-semibold hover:bg-zinc-800 disabled:opacity-50"
+                  >
+                    {savingMethod ? 'Guardando...' : 'Guardar'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={savingMethod}
+                    onClick={() => setChangingMethod(false)}
+                    className="text-xs px-2 py-1 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-end gap-2">
+                  <span>{formatOrderPaymentMethod(detail)}</span>
+                  {!detail.is_paid && (
+                    <button
+                      type="button"
+                      onClick={() => setChangingMethod(true)}
+                      className="text-xs text-blue-600 hover:text-blue-800 underline font-medium cursor-pointer"
+                    >
+                      Cambiar
+                    </button>
+                  )}
+                </div>
+              )}
             </Row>
+            {methodError && (
+              <p className="text-xs text-rose-600 text-right">{methodError}</p>
+            )}
             {!isExpired && (
               <Row label="Comprobante">
                 <button

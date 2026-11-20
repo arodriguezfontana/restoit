@@ -7,6 +7,7 @@ import { PAYMENT_METHOD_LABEL } from '@/types/order';
 import { MOVEMENT_CATEGORIES, OTHER_CATEGORY, parseAmount } from '@/utils/cashShift';
 import { formatCurrency } from '@/utils/currency';
 import { formatTime } from '@/utils/dateTime';
+import { formatOrderPaymentMethod } from '@/utils/paymentMethods';
 
 const LABEL_CLASS = 'block text-[11px] font-bold text-gray-600 uppercase tracking-wider mb-1';
 const FIELD_CLASS =
@@ -230,23 +231,21 @@ function MovementsList({
     const orderItems: UnifiedMovementItem[] = orders
       .filter((o) => o.is_billable)
       .map((o) => {
-        const methodKey = (o.payment_method || '').toLowerCase();
-        let category: string;
-        if (methodKey.includes('transferencia')) {
-          category = 'Venta (Transferencia)';
-        } else if (methodKey.includes('tarjeta')) {
-          category = 'Venta (Tarjeta)';
-        } else {
-          const methodLabel = PAYMENT_METHOD_LABEL[methodKey as PaymentMethod] || o.payment_method || 'Efectivo';
-          category = `Venta (${methodLabel})`;
-        }
+        const methodLabel = formatOrderPaymentMethod(o);
+        const category = `Venta (${methodLabel})`;
+        const descriptionExtra =
+          !o.is_paid &&
+          (o.payment_method?.toLowerCase().includes('transferencia') ||
+            o.balance_payment_method?.toLowerCase().includes('transferencia'))
+            ? ' · Pendiente de cobro'
+            : '';
         return {
           id: `order-${o.id}`,
           rawId: o.id,
           time: o.created_at,
           type: 'venta',
           category,
-          description: `Pedido #${o.shift_number || o.id} · ${o.customer_name}`,
+          description: `Pedido #${o.shift_number || o.id} · ${o.customer_name}${descriptionExtra}`,
           amount: o.total_amount,
           isManual: false,
         };

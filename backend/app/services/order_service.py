@@ -498,15 +498,23 @@ def _require_open_shift_to_collect(db: Session, order: Order) -> None:
     order.cash_shift_id = shift.id
 
 
-def update_order_payment(db: Session, order_id: int, is_paid: bool) -> Order:
-    """Actualiza manualmente el estado de cobro de un pedido."""
+def update_order_payment(
+    db: Session,
+    order_id: int,
+    is_paid: bool | None = None,
+    payment_method: PaymentMethod | str | None = None,
+) -> Order:
+    """Actualiza manualmente el estado de cobro de un pedido o su medio de pago."""
     order = get_order(db, order_id)
-    with transaction(db):
-        if order.is_shift_closed:
-            _release_from_closed_shift(order, is_paid)
-        if is_paid and not order.cash_shift_id:
-            _require_open_shift_to_collect(db, order)
-        order.is_paid = is_paid
+    if payment_method is not None:
+        change_order_payment_method(db, order, payment_method)
+    if is_paid is not None:
+        with transaction(db):
+            if order.is_shift_closed:
+                _release_from_closed_shift(order, is_paid)
+            if is_paid and not order.cash_shift_id:
+                _require_open_shift_to_collect(db, order)
+            order.is_paid = is_paid
     db.refresh(order)
     return order
 

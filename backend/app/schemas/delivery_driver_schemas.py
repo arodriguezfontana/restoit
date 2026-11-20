@@ -43,7 +43,10 @@ class TripOrderResponse(BaseModel):
     shift_number: int
     customer_name: str
     shipping_address: str
-    payment_method: str | None
+    payment_method: str | None = None
+    balance_payment_method: str | None = None
+    paid_amount: float = 0.0
+    is_paid: bool = False
     total_amount: float
     status: str
 

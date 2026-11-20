@@ -274,8 +274,10 @@ def update_order_payment(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ) -> OrderResponse:
-    """Actualiza manualmente el estado de pago del pedido (Abonado)."""
-    order = order_service.update_order_payment(db, order_id, payload.is_paid)
+    """Actualiza manualmente el estado de pago del pedido (Abonado o cambio de medio)."""
+    order = order_service.update_order_payment(
+        db, order_id, is_paid=payload.is_paid, payment_method=payload.payment_method
+    )
     # En efectivo el cliente le paga en mano al local: ahí no hace falta avisarle que se registró el cobro.
     if order.is_paid and order.channel and order.chat_id and not order.is_cash_payment:
         mensaje = f"✅ ¡Recibimos el pago de tu pedido #{order.shift_number}! ¡Muchas gracias!"

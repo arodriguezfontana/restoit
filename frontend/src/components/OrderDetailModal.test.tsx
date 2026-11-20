@@ -529,5 +529,52 @@ describe('OrderDetailModal', () => {
 
       expect(onMarkPaid).toHaveBeenCalledWith(55, true);
     });
+
+    it('permite cambiar el medio de pago a tarjeta o transferencia antes de abonar', async () => {
+      service.fetchOrderDetail.mockResolvedValueOnce(
+        makeOrderDetail({
+          ...ORDER,
+          payment_method: 'efectivo',
+          is_paid: false,
+        })
+      );
+      service.updateOrderPayment.mockResolvedValueOnce(
+        makeOrder({
+          ...ORDER,
+          payment_method: 'tarjeta',
+          is_paid: false,
+        })
+      );
+
+      const { user } = renderModal(ORDER);
+
+      expect(await screen.findByText('Efectivo')).toBeInTheDocument();
+      const cambiarBtn = screen.getByRole('button', { name: 'Cambiar' });
+      await user.click(cambiarBtn);
+
+      const select = screen.getByRole('combobox', { name: 'Seleccionar nuevo medio de pago' });
+      await user.selectOptions(select, 'tarjeta');
+
+      const guardarBtn = screen.getByRole('button', { name: 'Guardar' });
+      await user.click(guardarBtn);
+
+      expect(service.updateOrderPayment).toHaveBeenCalledWith(55, undefined, 'tarjeta');
+      expect(await screen.findByText('Tarjeta')).toBeInTheDocument();
+    });
+
+    it('con pedido ya abonado no muestra el botón de cambiar medio de pago', async () => {
+      service.fetchOrderDetail.mockResolvedValueOnce(
+        makeOrderDetail({
+          ...ORDER,
+          payment_method: 'tarjeta',
+          is_paid: true,
+        })
+      );
+
+      renderModal(ORDER);
+
+      expect(await screen.findByText('Tarjeta')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Cambiar' })).not.toBeInTheDocument();
+    });
   });
 });

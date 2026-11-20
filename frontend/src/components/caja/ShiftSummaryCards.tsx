@@ -16,11 +16,16 @@ function DigitalSales({
 }: {
   summary?: CashShiftSummaryBreakdown | null;
 }) {
+  const pendingTransfers = summary?.pending_transfers ?? 0;
   return (
     <div className="bg-gradient-to-r from-slate-50 to-gray-50 rounded-2xl border border-gray-200 p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
       <div className="space-y-1.5">
-        <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Ventas digitales</span>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-700">
+        <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Desglose por medio de pago</span>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-gray-700">
+          <span>
+            Efectivo: <strong className="text-gray-900">{formatCurrency(summary?.cash_sales ?? 0)}</strong>
+          </span>
+          <span>·</span>
           <span>
             MercadoPago: <strong className="text-gray-900">{formatCurrency(summary?.mercadopago_sales ?? 0)}</strong>
           </span>
@@ -31,6 +36,13 @@ function DigitalSales({
           <span>·</span>
           <span>
             Tarjeta: <strong className="text-gray-900">{formatCurrency(summary?.tarjeta_sales ?? 0)}</strong>
+          </span>
+          <span>·</span>
+          <span className={pendingTransfers > 0 ? 'text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md font-semibold' : ''}>
+            Pendiente de cobro:{' '}
+            <strong className={pendingTransfers > 0 ? 'text-amber-900' : 'text-gray-900'}>
+              {formatCurrency(pendingTransfers)}
+            </strong>
           </span>
         </div>
       </div>

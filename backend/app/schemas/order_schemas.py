@@ -383,9 +383,10 @@ class OrderDetailResponse(OrderResponse):
 
 
 class OrderPaymentUpdate(BaseModel):
-    """Payload para actualizar manualmente el estado de cobro de un pedido."""
+    """Payload para actualizar manualmente el estado de cobro de un pedido o cambiar su medio de pago."""
 
-    is_paid: bool = True
+    is_paid: bool | None = None
+    payment_method: PaymentMethod | None = None
 
 
 class OrderItemPreparedUpdate(BaseModel):

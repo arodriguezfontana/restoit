@@ -26,6 +26,10 @@ export interface TripOrder {
   customer_name: string;
   shipping_address: string;
   payment_method: PaymentMethod | null;
+  balance_payment_method?: PaymentMethod | null;
+  paid_amount?: number;
+  pending_amount?: number;
+  is_paid?: boolean;
   total_amount: number;
   status: string;
 }

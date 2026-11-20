@@ -100,6 +100,25 @@ describe('HistorialView', () => {
 
     expect(screen.getByRole('dialog', { name: 'Pedido #1' })).toBeInTheDocument();
   });
+
+  it('US-62: muestra el medio real de cada pedido sin asumir efectivo y desglosa pagos mixtos', async () => {
+    const pedidosConMedios = [
+      makeOrder({ id: 10, shift_number: 10, customer_name: 'Ana', payment_method: 'tarjeta' }),
+      makeOrder({ id: 20, shift_number: 20, customer_name: 'Beto', payment_method: 'transferencia' }),
+      makeOrder({ id: 30, shift_number: 30, customer_name: 'Caro', payment_method: 'mercadopago', balance_payment_method: 'efectivo', paid_amount: 3000 }),
+      makeOrder({ id: 40, shift_number: 40, customer_name: 'Dario', payment_method: null }),
+    ];
+    orders.fetchOrders.mockResolvedValueOnce(pedidosConMedios);
+
+    render(<HistorialView />);
+
+    expect(await screen.findByText('Ana')).toBeInTheDocument();
+    expect(screen.getByText('Tarjeta')).toBeInTheDocument();
+    expect(screen.getByText('Transferencia')).toBeInTheDocument();
+    expect(screen.getByText('MercadoPago + Efectivo')).toBeInTheDocument();
+    expect(screen.getByText('No informado')).toBeInTheDocument();
+    expect(screen.queryByText('Efectivo')).not.toBeInTheDocument();
+  });
 });
 
 describe('StatsSection', () => {

@@ -465,3 +465,50 @@ def test_la_diferencia_en_efectivo_solo_suma_ese_monto_a_la_caja(client, db_sess
     assert (despues["cash_sales"], despues["mercadopago_sales"]) == (2000.0, 5000.0)
     assert despues["expected_cash"] == 12000.0
     assert despues["total_sales"] == 7000.0
+
+
+def test_resumen_desglosa_medios_y_transferencia_sin_confirmar_aparece_como_pendiente_de_cobro(
+    client, db_session, open_shift
+):
+    # Pedido en efectivo ya abonado
+    o_cash = _pedido_listo(db_session, open_shift, payment_method="efectivo", total=3000.0, is_paid=True)
+    # Pedido en MercadoPago abonado
+    o_mp = _pedido_listo(db_session, open_shift, payment_method="mercadopago", total=4000.0, is_paid=True)
+    # Pedido en Tarjeta abonado
+    o_card = _pedido_listo(db_session, open_shift, payment_method="tarjeta", total=2500.0, is_paid=True)
+    # Transferencia sin confirmar (no abonada)
+    o_transf = _pedido_listo(db_session, open_shift, payment_method="transferencia", total=3500.0, is_paid=False)
+
+    resumen = _resumen(client)
+    assert resumen["cash_sales"] == 3000.0
+    assert resumen["mercadopago_sales"] == 4000.0
+    assert resumen["tarjeta_sales"] == 2500.0
+    assert resumen["transferencia_sales"] == 0.0
+    assert resumen["pending_transfers"] == 3500.0
+    # Efectivo esperado para el arqueo es solo fondo inicial (10000) + ventas efectivo (3000) = 13000
+    assert resumen["expected_cash"] == 13000.0
+
+    # Al confirmar la transferencia, deja de ser pendiente y se suma a transferencia_sales
+    client.patch(f"/api/v1/orders/{o_transf.id}/payment", json={"is_paid": True})
+    resumen_confirmado = _resumen(client)
+    assert resumen_confirmado["pending_transfers"] == 0.0
+    assert resumen_confirmado["transferencia_sales"] == 3500.0
+    # Efectivo esperado sigue siendo 13000 (no incluye transferencias)
+    assert resumen_confirmado["expected_cash"] == 13000.0
+
+
+def test_cambio_de_medio_de_pago_y_pago_parcial(client, db_session, open_shift):
+    order = _pedido_listo(db_session, open_shift, payment_method="efectivo", total=5000.0, is_paid=False)
+
+    # Cambiar medio de pago a tarjeta
+    cambio = client.patch(f"/api/v1/orders/{order.id}/payment", json={"payment_method": "tarjeta"})
+    assert cambio.status_code == 200
+    assert cambio.json()["payment_method"] == "tarjeta"
+
+    # Confirmar cobro
+    client.patch(f"/api/v1/orders/{order.id}/payment", json={"is_paid": True})
+    resumen = _resumen(client)
+    assert resumen["tarjeta_sales"] == 5000.0
+    assert resumen["cash_sales"] == 0.0
+    assert resumen["expected_cash"] == 10000.0
+

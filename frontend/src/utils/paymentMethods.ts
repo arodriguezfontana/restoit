@@ -1,3 +1,4 @@
+import { PAYMENT_METHOD_LABEL } from '@/types/order';
 import type { DeliveryMethod, PaymentMethod } from '@/types/order';
 import type { StoreConfig } from '@/types/storeConfig';
 
@@ -21,4 +22,46 @@ export function acceptedPaymentMethods(config: StoreConfig | null, delivery?: De
 function cardApplies(appliesTo: string, delivery?: DeliveryMethod): boolean {
   if (appliesTo === 'both' || !delivery) return true;
   return appliesTo === (delivery === 'retiro' ? 'pickup' : 'delivery');
+}
+
+export interface OrderPaymentInfo {
+  payment_method?: string | null;
+  balance_payment_method?: string | null;
+  paid_amount?: number | null;
+  is_paid?: boolean | null;
+}
+
+/** Devuelve la descripción real del medio o medios de pago del pedido (incluyendo pagos parciales/mixtos). */
+export function formatOrderPaymentMethod(order?: OrderPaymentInfo | null): string {
+  if (!order || !order.payment_method) {
+    return 'No informado';
+  }
+  const methodKey = order.payment_method.toLowerCase();
+  let firstMethod: string;
+  if (methodKey.includes('transferencia')) {
+    firstMethod = 'Transferencia';
+  } else if (methodKey.includes('tarjeta')) {
+    firstMethod = 'Tarjeta';
+  } else {
+    firstMethod = PAYMENT_METHOD_LABEL[methodKey as PaymentMethod] || order.payment_method;
+  }
+
+  if (
+    order.balance_payment_method &&
+    order.balance_payment_method.toLowerCase() !== methodKey &&
+    (order.paid_amount ?? 0) > 0
+  ) {
+    const balKey = order.balance_payment_method.toLowerCase();
+    let secondMethod: string;
+    if (balKey.includes('transferencia')) {
+      secondMethod = 'Transferencia';
+    } else if (balKey.includes('tarjeta')) {
+      secondMethod = 'Tarjeta';
+    } else {
+      secondMethod = PAYMENT_METHOD_LABEL[balKey as PaymentMethod] || order.balance_payment_method;
+    }
+    return `${firstMethod} + ${secondMethod}`;
+  }
+
+  return firstMethod;
 }

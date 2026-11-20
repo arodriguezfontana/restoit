@@ -37,6 +37,7 @@ class ShiftSummary:
     difference_type: str | None
     orders_count: int
     movements_count: int
+    pending_transfers: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -112,6 +113,15 @@ def calculate_shift_summary(shift: CashShift) -> ShiftSummary:
     total_digital_sales = sales["mercadopago"] + transferencia_sales + tarjeta_sales + sales["other_digital"]
     expected_cash = initial + sales["cash"] + manual_income - manual_expense
 
+    pending_transfers = sum(
+        (
+            to_money(o.amount_pending)
+            for o in billable_orders
+            if not o.is_paid and o.pending_payment_method == PaymentMethod.TRANSFER.value
+        ),
+        Decimal(0),
+    )
+
     return ShiftSummary(
         initial_amount=float(initial),
         cash_sales=float(sales["cash"]),
@@ -124,6 +134,7 @@ def calculate_shift_summary(shift: CashShift) -> ShiftSummary:
         manual_income=float(manual_income),
         manual_expense=float(manual_expense),
         expected_cash=float(expected_cash),
+        pending_transfers=float(pending_transfers),
         final_amount=_optional_float(shift.final_amount),
         difference=_optional_float(shift.difference),
         difference_type=shift.difference_type,

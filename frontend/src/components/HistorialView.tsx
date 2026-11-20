@@ -4,6 +4,7 @@ import type { AdminOrder, PaymentMethod } from '@/types/order';
 import { PAYMENT_METHOD_LABEL } from '@/types/order';
 import { fetchOrders } from '@/services/orderService';
 import { formatCurrency } from '@/utils/currency';
+import { formatOrderPaymentMethod } from '@/utils/paymentMethods';
 import type { DateRangePreset } from '@/utils/dateRange';
 import { parseDateInputValue, rangeForPreset } from '@/utils/dateRange';
 import { DateRangeFilter } from '@/components/DateRangeFilter';
@@ -199,8 +200,7 @@ export function HistorialView() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {pagedOrders.map((order) => {
-                  const paymentKey = (order.payment_method || '').toLowerCase() as PaymentMethod;
-                  const paymentLabel = PAYMENT_METHOD_LABEL[paymentKey] || order.payment_method || 'Efectivo';
+                  const paymentLabel = formatOrderPaymentMethod(order);
                   return (
                     <tr key={order.id} onClick={() => setDetailOrder(order)} className="hover:bg-gray-50 cursor-pointer">
                       <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">
