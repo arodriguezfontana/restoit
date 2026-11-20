@@ -22,13 +22,12 @@ const ORDER = makeOrder({
 
 function renderModal(
   order: AdminOrder = ORDER,
-  simulated = false,
   onMarkPaid?: (orderId: number, isPaid: boolean) => Promise<void>,
   onCancel?: (orderId: number) => Promise<void>
 ) {
   const onClose = vi.fn();
   render(
-    <OrderDetailModal order={order} simulated={simulated} onMarkPaid={onMarkPaid} onCancel={onCancel} onClose={onClose} />
+    <OrderDetailModal order={order} onMarkPaid={onMarkPaid} onCancel={onCancel} onClose={onClose} />
   );
   return { onClose, user: userEvent.setup() };
 }
@@ -121,6 +120,46 @@ describe('OrderDetailModal', () => {
     expect(screen.queryByText('Demora estimada')).not.toBeInTheDocument();
   });
 
+  it('muestra de dónde salió la demora del pedido', () => {
+    renderModal(makeOrder({ ...ORDER, estimated_minutes: 30, estimate_source: 'fixed' }));
+
+    expect(screen.getByText('30 min')).toBeInTheDocument();
+    expect(screen.getByText('Origen de la demora')).toBeInTheDocument();
+    expect(screen.getByText('Regla fija')).toBeInTheDocument();
+  });
+
+  it('el personal puede modificar la demora a mano', async () => {
+    const onUpdateDelay = vi.fn().mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(<OrderDetailModal order={ORDER} onUpdateDelay={onUpdateDelay} onClose={vi.fn()} />);
+
+    await user.click(screen.getByRole('button', { name: 'Modificar demora' }));
+    const input = screen.getByLabelText('Demora estimada en minutos');
+    await user.clear(input);
+    await user.type(input, '45');
+    await user.click(screen.getByRole('button', { name: 'Guardar demora' }));
+
+    expect(onUpdateDelay).toHaveBeenCalledWith(55, 45);
+  });
+
+  it('un pedido sin demora permite cargarla a mano y no inventa un origen', async () => {
+    const onUpdateDelay = vi.fn().mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(
+      <OrderDetailModal
+        order={makeOrder({ ...ORDER, estimated_minutes: null, estimate_source: null })}
+        onUpdateDelay={onUpdateDelay}
+        onClose={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('Sin demora informada')).toBeInTheDocument();
+    expect(screen.queryByText('Origen de la demora')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Cargar demora' }));
+    await user.type(screen.getByLabelText('Demora estimada en minutos'), '0');
+    expect(screen.getByRole('button', { name: 'Guardar demora' })).toBeDisabled();
+  });
+
   it('si falla la carga del detalle permite reintentar', async () => {
     service.fetchOrderDetail.mockRejectedValueOnce({ message: 'Pedido no encontrado' });
     const { user } = renderModal();
@@ -132,13 +171,6 @@ describe('OrderDetailModal', () => {
 
     expect(await screen.findByText('Pizza Muzzarella')).toBeInTheDocument();
     expect(service.fetchOrderDetail).toHaveBeenCalledTimes(2);
-  });
-
-  it('en modo simulación no pide el detalle al servidor', () => {
-    renderModal(ORDER, true);
-
-    expect(screen.getByText(/no está disponible en el modo simulación/)).toBeInTheDocument();
-    expect(service.fetchOrderDetail).not.toHaveBeenCalled();
   });
 
   it('pone el foco en cerrar y se cierra con Escape, la cruz o el botón', async () => {
@@ -170,7 +202,7 @@ describe('OrderDetailModal', () => {
       })
     );
     const onMarkPaid = vi.fn().mockResolvedValue(undefined);
-    const { user } = renderModal(ORDER, false, onMarkPaid);
+    const { user } = renderModal(ORDER, onMarkPaid);
 
     const button = await screen.findByRole('button', { name: 'Marcar como abonado' });
     expect(button).toBeInTheDocument();
@@ -178,11 +210,11 @@ describe('OrderDetailModal', () => {
     expect(onMarkPaid).toHaveBeenCalledWith(55, true);
   });
 
-  it.each(['Pendiente', 'Confirmado', 'En Camino', 'Listo para Retirar'] as const)(
-    'un pedido %s se puede cancelar desde el detalle, después de confirmarlo',
+  it.each(['Confirmado', 'En Camino', 'Listo para Retirar'] as const)(
+    'un pedido %s se puede cancelar desde el detalle',
     async (status) => {
       const onCancel = vi.fn().mockResolvedValue(undefined);
-      const { user } = renderModal({ ...ORDER, status }, false, undefined, onCancel);
+      const { user } = renderModal({ ...ORDER, status }, undefined, onCancel);
       const dialog = screen.getByRole('dialog', { name: 'Pedido #55' });
 
       await user.click(within(dialog).getByRole('button', { name: 'Cancelar pedido' }));
@@ -195,7 +227,7 @@ describe('OrderDetailModal', () => {
   );
 
   it('el botón de cancelar está al lado del de cerrar', () => {
-    renderModal(ORDER, false, undefined, vi.fn());
+    renderModal(ORDER, undefined, vi.fn());
 
     const cancel = screen.getByRole('button', { name: 'Cancelar pedido' });
     const close = screen.getByRole('button', { name: 'Cerrar detalle del pedido' });
@@ -204,7 +236,7 @@ describe('OrderDetailModal', () => {
 
   it('se puede desistir de cancelar', async () => {
     const onCancel = vi.fn();
-    const { user } = renderModal(ORDER, false, undefined, onCancel);
+    const { user } = renderModal(ORDER, undefined, onCancel);
 
     await user.click(screen.getByRole('button', { name: 'Cancelar pedido' }));
     await user.click(screen.getByRole('button', { name: 'No' }));
@@ -213,8 +245,8 @@ describe('OrderDetailModal', () => {
     expect(screen.getByRole('button', { name: 'Cancelar pedido' })).toBeInTheDocument();
   });
 
-  it.each(['Finalizado', 'Rechazado', 'Cancelado'] as const)('un pedido %s ya no se puede cancelar', (status) => {
-    renderModal({ ...ORDER, status }, false, undefined, vi.fn());
+  it.each(['Finalizado', 'Cancelado'] as const)('un pedido %s ya no se puede cancelar', (status) => {
+    renderModal({ ...ORDER, status }, undefined, vi.fn());
 
     expect(screen.queryByRole('button', { name: 'Cancelar pedido' })).not.toBeInTheDocument();
   });
@@ -521,7 +553,7 @@ describe('OrderDetailModal', () => {
         })
       );
       const onMarkPaid = vi.fn().mockResolvedValue(undefined);
-      const { user } = renderModal(ORDER, false, onMarkPaid);
+      const { user } = renderModal(ORDER, onMarkPaid);
 
       expect(await screen.findByText('Tarjeta')).toBeInTheDocument();
       const button = screen.getByRole('button', { name: 'Marcar como abonado' });

@@ -14,7 +14,7 @@ from app.services import delivery_driver_service
 # Estados con los que un pedido deja de estar en la calle: cuando el último llega a uno, el viaje terminó.
 _LEFT_THE_STREET_STATUSES = (OrderStatus.COMPLETED.value, OrderStatus.CANCELLED.value)
 # Pedidos que no se llegaron a entregar: no hay dinero que rendir.
-_NOT_COLLECTABLE_STATUSES = (OrderStatus.CANCELLED.value, OrderStatus.REJECTED.value)
+_NOT_COLLECTABLE_STATUSES = (OrderStatus.CANCELLED.value,)
 
 
 @dataclass(frozen=True)

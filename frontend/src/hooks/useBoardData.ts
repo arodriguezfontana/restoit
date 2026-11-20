@@ -9,9 +9,9 @@ const POLL_INTERVAL_MS = 10000;
 
 /**
  * Los pedidos en curso y los repartidores activos del tablero de comandas. Se piden al abrir y se refrescan cada
- * pocos segundos, salvo en el modo simulación, donde los datos son locales.
+ * pocos segundos.
  */
-export function useBoardData(isSimulating: boolean) {
+export function useBoardData() {
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [activeDrivers, setActiveDrivers] = useState<DeliveryDriver[]>([]);
   const [loading, setLoading] = useState(false);
@@ -20,8 +20,6 @@ export function useBoardData(isSimulating: boolean) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (isSimulating) return;
-
     let cancelled = false;
 
     const load = async () => {
@@ -53,7 +51,7 @@ export function useBoardData(isSimulating: boolean) {
       cancelled = true;
       clearInterval(intervalId);
     };
-  }, [isSimulating]);
+  }, []);
 
-  return { orders, setOrders, activeDrivers, setActiveDrivers, loading, hasLoaded, error, setError };
+  return { orders, setOrders, activeDrivers, loading, hasLoaded, error, setError };
 }

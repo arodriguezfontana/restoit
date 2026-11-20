@@ -6,8 +6,8 @@ import { useElapsedTime } from '@/hooks/useElapsedTime';
 import { DriverAssignment } from '@/components/DriverAssignment';
 import { KitchenUpdateBanner } from '@/components/KitchenUpdateBanner';
 import { PaymentBadges } from '@/components/PaymentBadges';
-import { PendingOrderActions } from '@/components/PendingOrderActions';
-import { ALERT_THRESHOLD_MS, formatElapsed, getDelayLevel } from '@/utils/elapsedTime';
+import { NewOrderBanner } from '@/components/NewOrderBanner';
+import { formatElapsed, getDelayLevel } from '@/utils/elapsedTime';
 import type { DelayLevel } from '@/utils/elapsedTime';
 import type { DeliveryDriver } from '@/types/deliveryDriver';
 
@@ -30,13 +30,15 @@ const DELIVERY_METHOD_LABEL: Record<AdminOrder['delivery_method'], string> = {
 
 interface ComandaCardProps {
   order: AdminOrder;
-  onStatusChange: (orderId: number, newStatus: OrderStatus, estimatedMinutes?: number) => Promise<void>;
+  onStatusChange: (orderId: number, newStatus: OrderStatus) => Promise<void>;
   /** Asigna un repartidor al pedido. */
   onAssignDriver?: (orderId: number, driverId: number | null) => Promise<void>;
   /** Marca el pedido como abonado. */
   onMarkPaid?: (orderId: number, isPaid: boolean) => Promise<void>;
   /** Cocina vio los productos que el cliente agregó al pedido. */
   onAcknowledgeUpdate?: (orderId: number) => Promise<void>;
+  /** El personal vio el pedido nuevo (apaga su alerta sonora). */
+  onMarkSeen?: (orderId: number) => Promise<void>;
   /** Lista de repartidores activos disponibles para asignar. */
   activeDrivers?: DeliveryDriver[];
   /** Abre la ventana con el detalle completo del pedido. */
@@ -47,11 +49,7 @@ interface ComandaCardProps {
   onItemPreparedChange?: (orderId: number, itemId: number, isPrepared: boolean) => Promise<void>;
   /** Callback opcional de sector (para compatibilidad). */
   onSectorPrepared?: (orderId: number, sector: string, isPrepared: boolean) => Promise<void>;
-  /** En el modo simulación los pedidos no existen en el servidor: no se consulta la estimación de demora. */
-  simulated?: boolean;
 }
-
-export { ESTIMATE_REFRESH_INTERVAL_MS } from '@/hooks/useOrderEstimate';
 
 /** Evita que los clics en los controles de la tarjeta abran el detalle del pedido. */
 const stopPropagation = (event: MouseEvent) => event.stopPropagation();
@@ -62,14 +60,14 @@ export function ComandaCard({
   onAssignDriver,
   onMarkPaid,
   onAcknowledgeUpdate,
+  onMarkSeen,
   activeDrivers = [],
   onOpenDetail,
-  simulated = false,
 }: ComandaCardProps) {
   const [pending, setPending] = useState(false);
   const elapsedMs = useElapsedTime(order.created_at);
   // Un pedido a domicilio "En Camino" primero arma su viaje (en silencio) y recién sale cuando se inicia el viaje.
-  const isDeliveryOnTheWay = order.status === 'En Camino' && order.delivery_method === 'domicilio' && !simulated;
+  const isDeliveryOnTheWay = order.status === 'En Camino' && order.delivery_method === 'domicilio';
   const isDispatched = isDeliveryOnTheWay && order.trip_id != null;
   const isBuildingTrip = isDeliveryOnTheWay && order.trip_id == null;
   const hasKitchenUpdate = Boolean(order.kitchen_update_pending);
@@ -79,13 +77,9 @@ export function ComandaCard({
   // Con el viaje ya despachado el repartidor no se cambia (la ruta y los avisos ya salieron).
   const canAssignDriver = order.status === 'En Camino' && order.delivery_method === 'domicilio' && !isDispatched;
 
-  const isOverdue = order.status === 'Pendiente' && elapsedMs > ALERT_THRESHOLD_MS;
+  const isNew = Boolean(order.needs_attention);
   const delayLevel = getDelayLevel(order, new Date(order.created_at).getTime() + elapsedMs);
-  const elapsedBadgeClass = isOverdue
-    ? 'bg-red-100 text-red-700 animate-pulse'
-    : delayLevel
-      ? DELAY_BADGE_CLASS[delayLevel]
-      : 'bg-gray-100 text-gray-600';
+  const elapsedBadgeClass = delayLevel ? DELAY_BADGE_CLASS[delayLevel] : 'bg-gray-100 text-gray-600';
 
   const handleAssignDriver = async (driverId: number | null) => {
     setPending(true);
@@ -96,10 +90,10 @@ export function ComandaCard({
     }
   };
 
-  const handleClick = async (newStatus: OrderStatus, estimatedMinutes?: number) => {
+  const handleClick = async (newStatus: OrderStatus) => {
     setPending(true);
     try {
-      await onStatusChange(order.id, newStatus, estimatedMinutes);
+      await onStatusChange(order.id, newStatus);
     } finally {
       setPending(false);
     }
@@ -108,7 +102,7 @@ export function ComandaCard({
   return (
     <div
       onClick={onOpenDetail ? () => onOpenDetail(order) : undefined}
-      className={`@container bg-white rounded-2xl border p-4 transition-all shadow-xs hover:shadow-md ${onOpenDetail ? 'cursor-pointer' : ''} ${hasKitchenUpdate ? 'border-amber-400 ring-2 ring-amber-300 bg-amber-50/30' : isOverdue ? 'border-red-300 bg-red-50/20' : 'border-gray-100'}`}
+      className={`@container bg-white rounded-2xl border p-4 transition-all shadow-xs hover:shadow-md ${onOpenDetail ? 'cursor-pointer' : ''} ${hasKitchenUpdate ? 'border-amber-400 ring-2 ring-amber-300 bg-amber-50/30' : isNew ? 'border-emerald-400 ring-2 ring-emerald-300 bg-emerald-50/30' : 'border-gray-100'}`}
     >
       <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between border-b border-gray-50 pb-2">
@@ -140,6 +134,8 @@ export function ComandaCard({
             {formatElapsed(elapsedMs)}
           </span>
         </div>
+
+        {isNew && <NewOrderBanner onSeen={onMarkSeen && (() => onMarkSeen(order.id))} />}
 
         {hasKitchenUpdate && (
           <KitchenUpdateBanner onAcknowledge={onAcknowledgeUpdate && (() => onAcknowledgeUpdate(order.id))} />
@@ -198,10 +194,6 @@ export function ComandaCard({
           hasPartialPayment={hasPartialPayment}
           onMarkPaid={onMarkPaid && (() => onMarkPaid(order.id, true))}
         />
-
-        {order.status === 'Pendiente' && (
-          <PendingOrderActions order={order} simulated={simulated} pending={pending} onAction={handleClick} />
-        )}
 
         {order.status === 'Confirmado' && (
           <div className="cursor-default pt-2 border-t border-gray-50" onClick={stopPropagation}>

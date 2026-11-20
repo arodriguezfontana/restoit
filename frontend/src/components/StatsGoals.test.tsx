@@ -35,7 +35,7 @@ const MOCK_KPIS: DashboardKPIsResponse = {
     growth_pct: 20.0,
     trend: 'up',
   },
-  status_distribution: { Finalizado: 15, Rechazado: 1 },
+  status_distribution: { Finalizado: 15, Cancelado: 1 },
   top_products: [
     {
       product_name: 'Pizza Especial',
@@ -90,7 +90,7 @@ const MOCK_INSIGHT: StrategicInsightResponse = {
 describe('Dashboard de Métricas, Metas y Asistente IA', () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    stats.fetchStatusDistribution.mockResolvedValue({ Finalizado: 15, Rechazado: 1 });
+    stats.fetchStatusDistribution.mockResolvedValue({ Finalizado: 15, Cancelado: 1 });
     stats.fetchTopProducts.mockResolvedValue([
       { product_name: 'Pizza Especial', total_quantity: 10, total_revenue: 90000 },
     ]);

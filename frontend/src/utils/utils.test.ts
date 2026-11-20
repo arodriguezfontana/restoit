@@ -5,7 +5,7 @@ import { formatOrderPaymentMethod } from '@/utils/paymentMethods';
 import { PHONE_PATTERN, validateCustomerData } from '@/utils/customerValidation';
 import { getErrorMessage } from '@/utils/errors';
 import { parseDateInputValue, presetLabel, rangeForPreset } from '@/utils/dateRange';
-import { ALERT_THRESHOLD_MS, formatElapsed, getDelayLevel } from '@/utils/elapsedTime';
+import { formatElapsed, getDelayLevel } from '@/utils/elapsedTime';
 import { groupByCategory } from '@/utils/productGrouping';
 import { COCA, FUGAZZETA, MUZZA, makeOrder } from '@/test/utils';
 
@@ -107,7 +107,6 @@ describe('elapsedTime', () => {
     expect(formatElapsed(0)).toBe('0min');
     expect(formatElapsed(125000)).toBe('2min');
     expect(formatElapsed(-5000)).toBe('0min');
-    expect(ALERT_THRESHOLD_MS).toBe(2 * 60 * 1000);
   });
 
   it('un pedido para ahora pasa a "por vencer" en el último 25% del tiempo estimado y luego a "atrasado"', () => {
@@ -129,7 +128,7 @@ describe('elapsedTime', () => {
     expect(getDelayLevel(order, at(121))).toBe('late');
   });
 
-  it.each(['Pendiente', 'Listo para Retirar', 'Finalizado', 'Rechazado'] as const)(
+  it.each(['Listo para Retirar', 'Finalizado', 'Cancelado'] as const)(
     'no aplica a pedidos en estado %s',
     (status) => {
       expect(getDelayLevel(makeOrder({ status, estimated_minutes: 30 }), Date.now())).toBeNull();

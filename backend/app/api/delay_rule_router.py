@@ -49,7 +49,7 @@ def create_delay_rule(payload: DelayRuleInput, db: Session = Depends(get_db)) ->
 
 @router.put("/rules/{rule_id}")
 def update_delay_rule(rule_id: int, payload: DelayRuleUpdate, db: Session = Depends(get_db)) -> DelayRuleResponse:
-    """Modifica una regla de demora fija. No cambia las demoras de los pedidos ya aceptados."""
+    """Modifica una regla de demora fija. No cambia las demoras de los pedidos ya tomados."""
     existing = delay_rule_service.get_rule(db, rule_id)
     rule = delay_rule_service.update_rule(
         db,

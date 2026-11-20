@@ -33,14 +33,15 @@ def test_crea_pedido_web_aceptado_automaticamente(public_client, db_session, pro
 
     assert response.status_code == 201
     body = response.json()
-    # Los pedidos web no pasan por aceptar/rechazar: entran confirmados con la demora estimada.
+    # Los pedidos web no pasan por aceptar/rechazar: entran confirmados (sin demora si no hay ninguna configurada).
     assert body["status"] == "Confirmado"
     assert body["total_amount"] == 2 * 8500.0 + 2500.0
 
     order = db_session.query(Order).filter(Order.id == body["id"]).one()
     assert order.source == "web"
     assert order.status == "Confirmado"
-    assert order.estimated_minutes == 15
+    assert order.estimated_minutes is None
+    assert order.needs_attention is True
     assert order.customer_phone == "1155551234"
     assert order.notes == "Tocar timbre 2B"
     assert order.shipping_address == "Calle Falsa 123"

@@ -98,7 +98,7 @@ function RulesEditor({ title, method, rules, onChanged }: RulesEditorProps) {
 
       {rules.length === 0 ? (
         <p className="text-xs text-gray-500">
-          Sin reglas: al aceptar un pedido la demora se indica a mano (o sale del historial si está activo).
+          Sin reglas: los pedidos entran sin demora estimada (o con la del historial, si está activa).
         </p>
       ) : (
         <ul className="space-y-1.5">
@@ -235,8 +235,9 @@ export function DelaySettingsSection() {
         <h2 className="text-base font-bold text-gray-900">Demora de los pedidos</h2>
         <p className="text-xs text-gray-500 mt-1">
           Definí cómo se calcula la demora que se promete al cliente. Los cambios se guardan al instante y no afectan a los
-          pedidos ya aceptados. Si la demora inteligente no tiene datos suficientes se usa la regla fija que corresponda a
-          la cantidad de pedidos en cola; si no hay ninguna, la indica el personal.
+          pedidos ya tomados. Si la demora inteligente no tiene datos suficientes se usa la regla fija que corresponda a
+          la cantidad de pedidos en cola; si no hay ninguna, el pedido entra sin demora y el cliente no recibe un tiempo
+          estimado (el personal puede cargarla a mano desde el detalle del pedido).
         </p>
       </div>
 

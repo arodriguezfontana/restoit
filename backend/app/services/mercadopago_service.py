@@ -25,7 +25,7 @@ _last_checked: dict[int, float] = {}
 # Estados en los que el pedido todavía puede recibir un pago.
 _ACTIVE_STATUSES = [
     status.value
-    for status in (OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.ON_THE_WAY, OrderStatus.READY_FOR_PICKUP)
+    for status in (OrderStatus.CONFIRMED, OrderStatus.ON_THE_WAY, OrderStatus.READY_FOR_PICKUP)
 ]
 
 # Referencia externa del cobro de la diferencia de un pedido ya abonado al que se le agregaron productos.
@@ -162,7 +162,7 @@ def start_web_payment(db: Session, order: Order, store_name: str) -> str:
 
 
 def start_chat_payment(db: Session, order: Order, store_config: StoreConfig) -> str | None:
-    """Crea el cobro de un pedido del chat ya aceptado y devuelve las instrucciones de pago para el cliente.
+    """Crea el cobro de un pedido del chat recién tomado y devuelve las instrucciones de pago para el cliente.
 
     Devuelve None si no hay nada que cobrar por MercadoPago o si el pedido no vino por un chat.
     """

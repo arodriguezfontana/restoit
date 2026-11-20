@@ -19,14 +19,17 @@ test.describe('Ciclo de vida de un pedido en el panel', () => {
     const driver = await createDriver(request, unique('Nico'));
     await loginAsAdmin(page);
 
-    // Los pedidos web se aceptan solos: entran confirmados, con la demora automática y sus datos.
-    const confirmado = orderCard(column(page, 'Confirmados'), order.id);
+    // Los pedidos web no pasan por aceptar/rechazar: entran en preparación, avisando que son nuevos.
+    const confirmado = orderCard(column(page, 'En preparación'), order.id);
     await expect(confirmado).toContainText(nombre);
     await expect(confirmado).toContainText('Web');
     await expect(confirmado).toContainText('Tocar timbre 2B');
     await expect(confirmado).toContainText(money(19500));
-    await expect(confirmado).toContainText(/Estimado: \d+ min/);
+    // Sin demora configurada (ni historial ni regla fija) no se informa ninguna.
+    await expect(confirmado).not.toContainText('Estimado');
     await expect(confirmado.getByRole('button', { name: 'Rechazar' })).toHaveCount(0);
+    await expect(confirmado.getByRole('button', { name: 'Confirmar' })).toHaveCount(0);
+    await expect(confirmado).toContainText('Pedido nuevo');
 
     // El detalle muestra productos y facturación.
     await confirmado.getByRole('button', { name: `Ver detalle del pedido #${order.id}` }).click();
@@ -74,7 +77,7 @@ test.describe('Ciclo de vida de un pedido en el panel', () => {
     await loginAsAdmin(page);
 
     // Se cancela desde el detalle del pedido (la tarjeta no tiene el botón).
-    const aCancelar = orderCard(column(page, 'Confirmados'), cancelado.id);
+    const aCancelar = orderCard(column(page, 'En preparación'), cancelado.id);
     await expect(aCancelar.getByRole('button', { name: /Cancelar/ })).toHaveCount(0);
     await aCancelar.getByRole('button', { name: `Ver detalle del pedido #${cancelado.id}` }).click();
     const detalle = page.getByRole('dialog', { name: `Pedido #${cancelado.id}` });
@@ -83,8 +86,10 @@ test.describe('Ciclo de vida de un pedido en el panel', () => {
     await expect(detalle).toBeHidden();
     await expect(page.getByRole('button', { name: `Ver detalle del pedido #${cancelado.id}`, exact: true })).toBeHidden();
 
-    await expect(orderCard(column(page, 'Confirmados'), retira.id)).toContainText(/Estimado: \d+ min/);
-    await orderCard(column(page, 'Confirmados'), retira.id).getByRole('button', { name: 'Marcar Listo para Retirar' }).click();
+    // El pedido nuevo se marca como visto desde su tarjeta.
+    await orderCard(column(page, 'En preparación'), retira.id).getByRole('button', { name: 'Visto' }).click();
+    await expect(orderCard(column(page, 'En preparación'), retira.id)).not.toContainText('Pedido nuevo');
+    await orderCard(column(page, 'En preparación'), retira.id).getByRole('button', { name: 'Marcar Listo para Retirar' }).click();
     await expect(orderCard(column(page, 'Listo para Retirar'), retira.id)).toBeVisible();
   });
 
@@ -95,6 +100,6 @@ test.describe('Ciclo de vida de un pedido en el panel', () => {
     const order = await createWebOrder(request, { customerName: nombre, items: [['Pizza Especial', 1]] });
 
     // El tablero consulta los pedidos cada 10 segundos.
-    await expect(orderCard(column(page, 'Confirmados'), order.id)).toContainText(nombre, { timeout: 15_000 });
+    await expect(orderCard(column(page, 'En preparación'), order.id)).toContainText(nombre, { timeout: 15_000 });
   });
 });

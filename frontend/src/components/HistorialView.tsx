@@ -19,15 +19,14 @@ function isOrderFinalized(status: string): boolean {
 
 function isOrderCancelled(status: string): boolean {
   const norm = (status || '').trim().toLowerCase();
-  return norm.includes('cancel') || norm.includes('rechaz');
+  return norm.includes('cancel');
 }
 
 function statusBadgeClasses(status: string): string {
   const normalized = status.trim().toLowerCase();
-  if (normalized.includes('pendiente')) return 'bg-yellow-100 text-yellow-800';
   if (normalized.includes('confirm')) return 'bg-green-100 text-green-800';
   if (normalized.includes('entreg') || normalized.includes('complet')) return 'bg-green-100 text-green-800';
-  if (normalized.includes('cancel') || normalized.includes('rechaz')) return 'bg-red-100 text-red-800';
+  if (normalized.includes('cancel')) return 'bg-red-100 text-red-800';
   return 'bg-gray-100 text-gray-800';
 }
 

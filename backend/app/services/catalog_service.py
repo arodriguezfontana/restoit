@@ -149,7 +149,7 @@ def delete_product(db: Session, product_id: int, delete_promotions: bool = False
     )
     promotion_ids = [promo.id for promo in promotions]
 
-    # Pedidos en curso: si el producto está en un pedido todavía abierto (no finalizado ni cancelado ni rechazado)
+    # Pedidos en curso: si el producto está en un pedido todavía abierto (no finalizado ni cancelado)
     order_filter = or_(
         OrderItem.product_id == product_id,
         OrderItem.secondary_product_id == product_id,
@@ -164,7 +164,6 @@ def delete_product(db: Session, product_id: int, delete_promotions: bool = False
             Order.status.notin_([
                 OrderStatus.COMPLETED.value,
                 OrderStatus.CANCELLED.value,
-                OrderStatus.REJECTED.value,
             ]),
             order_filter,
         )

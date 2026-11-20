@@ -194,24 +194,13 @@ export interface CheckoutFormErrors {
   address?: string;
 }
 
-export type OrderStatus =
-  | 'Pendiente'
-  | 'Confirmado'
-  | 'En Camino'
-  | 'Listo para Retirar'
-  | 'Finalizado'
-  | 'Rechazado'
-  | 'Cancelado';
+/** Todos los pedidos entran 'Confirmado' (en preparación): el local no los acepta ni los rechaza. */
+export type OrderStatus = 'Confirmado' | 'En Camino' | 'Listo para Retirar' | 'Finalizado' | 'Cancelado';
 
 /** Estados en los que el pedido ya terminó (sale del tablero de comandas). */
-export const FINISHED_ORDER_STATUSES: OrderStatus[] = ['Finalizado', 'Rechazado', 'Cancelado'];
+export const FINISHED_ORDER_STATUSES: OrderStatus[] = ['Finalizado', 'Cancelado'];
 
-export const ACTIVE_ORDER_STATUSES: OrderStatus[] = [
-  'Pendiente',
-  'Confirmado',
-  'En Camino',
-  'Listo para Retirar',
-];
+export const ACTIVE_ORDER_STATUSES: OrderStatus[] = ['Confirmado', 'En Camino', 'Listo para Retirar'];
 
 export type OrderSource = 'bot' | 'web' | 'mostrador';
 
@@ -255,13 +244,15 @@ export interface AdminOrder {
   balance_payment_method?: PaymentMethod | null;
   /** Se agregaron productos y cocina todavía no lo vio. */
   kitchen_update_pending?: boolean;
+  /** Pedido nuevo que el personal todavía no vio: el tablero lo resalta y suena la alerta hasta que lo ve. */
+  needs_attention?: boolean;
   /** Comprobante vigente si el pedido se paga por transferencia y ya lo adjuntaron. */
   payment_proof?: PaymentProofInfo | null;
   items?: WebOrderItem[];
   items_prepared_count?: number;
   is_all_prepared?: boolean;
   sectors?: (PreparationSector | string)[];
-  /** Solo al confirmar el pedido: por qué no se pudo imprimir la comanda (el pedido se guardó igual). */
+  /** Solo al registrar el pedido: por qué no se pudo imprimir la comanda (el pedido se guardó igual). */
   print_error?: string | null;
 }
 
@@ -272,19 +263,6 @@ export interface OrderDetail extends AdminOrder {
   shipping_cost: number;
   payment_method: PaymentMethod | null;
   is_paid: boolean;
-}
-
-/** Cómo se estimará la demora al aceptar un pedido. */
-export interface OrderDelayEstimate {
-  /** 'smart': la calcula el sistema con el historial del local; 'fixed': sale de una regla fija; 'manual': la indica el empleado. */
-  mode: 'smart' | 'fixed' | 'manual';
-  estimated_minutes: number | null;
-  /** Pedidos parecidos con los que se calculó (o los que hay hasta ahora) y los que hacen falta. */
-  samples: number;
-  min_samples: number;
-  queue_size: number;
-  /** Demora estándar del local, para sugerirla al cargarla a mano. */
-  suggested_minutes: number;
 }
 
 /** Una parada del viaje de un repartidor con la llegada estimada al domicilio. */

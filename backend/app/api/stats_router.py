@@ -47,7 +47,7 @@ def get_top_products(
     limit: int = Query(5, ge=1, le=50),
     db: Session = Depends(get_db),
 ) -> list[TopProductResponse]:
-    """Productos más vendidos del período, sin contar los pedidos rechazados."""
+    """Productos más vendidos del período, sin contar los pedidos cancelados."""
     return [TopProductResponse.from_stat(stat) for stat in stats_service.top_products(db, date_from, date_to, limit)]
 
 
@@ -84,7 +84,7 @@ def get_dashboard_kpis(
     date_to: datetime | None = Query(None),
     db: Session = Depends(get_db),
 ) -> DashboardKPIsResponse:
-    """Calcula métricas clave avanzadas (ticket promedio, tasa de rechazo, margen bruto y costos,
+    """Calcula métricas clave avanzadas (ticket promedio, tasa de cancelación, margen bruto y costos,
 
     crecimiento porcentual vs. período previo y seguimiento de metas).
     """

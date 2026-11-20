@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -70,13 +69,15 @@ class OrderResponse(BaseModel):
     balance_payment_method: PaymentMethod | None = None  # type: ignore[assignment]
     # Se agregaron productos y cocina todavía no lo vio.
     kitchen_update_pending: bool = False
+    # Pedido nuevo que el personal todavía no vio (suena la alerta del tablero).
+    needs_attention: bool = False
     # Comprobante vigente si el pedido se paga por transferencia y ya lo adjuntaron.
     payment_proof: PaymentProofInfo | None = None
     items: list["WebOrderItemResponse"] = Field(default_factory=list)
     items_prepared_count: int = 0
     is_all_prepared: bool = False
     sectors: list[str] = Field(default_factory=list)
-    # Solo al confirmar: motivo por el que la comanda no se pudo imprimir (el pedido se guardó igual).
+    # Solo al registrar el pedido: motivo por el que la comanda no se pudo imprimir (el pedido se guardó igual).
     print_error: str | None = None
 
     @model_validator(mode="after")
@@ -116,27 +117,13 @@ class OrderResponse(BaseModel):
             pending_amount=float(order.amount_pending),
             balance_payment_method=PaymentMethod(order.balance_payment_method) if order.balance_payment_method else None,
             kitchen_update_pending=bool(order.kitchen_update_pending),
+            needs_attention=bool(order.needs_attention),
             payment_proof=_proof_info(order),
             items=[WebOrderItemResponse.from_model(item) for item in order.items] if order.items else [],
             items_prepared_count=order.items_prepared_count,
             is_all_prepared=order.is_all_prepared,
             sectors=order.sectors,
         )
-
-
-class OrderDelayEstimateResponse(BaseModel):
-    """Cómo se estimará la demora al aceptar un pedido."""
-
-    # "smart": la calcula el sistema con el historial; "fixed": sale de una regla fija; "manual": la indica el empleado.
-    mode: Literal["smart", "fixed", "manual"]
-    # Demora calculada (solo en modo inteligente o con regla fija).
-    estimated_minutes: int | None = None
-    # Pedidos parecidos con los que se calculó, o los que hay hasta ahora, y los que se necesitan.
-    samples: int
-    min_samples: int
-    queue_size: int
-    # Demora estándar del local, para sugerirla al cargarla a mano.
-    suggested_minutes: int
 
 
 class TripDispatchPayload(BaseModel):
@@ -187,8 +174,13 @@ class TripResponse(BaseModel):
 
 class OrderStatusUpdate(BaseModel):
     status: OrderStatus
-    estimated_minutes: int | None = Field(None, gt=0)
     delivery_driver_id: int | None = None
+
+
+class OrderDelayUpdate(BaseModel):
+    """Demora estimada que el personal carga o modifica a mano."""
+
+    estimated_minutes: int = Field(..., gt=0, le=1440)
 
 
 class WebOrderItemCreate(BaseModel):

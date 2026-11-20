@@ -1,35 +1,15 @@
-import { act, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ComandaCard, ESTIMATE_REFRESH_INTERVAL_MS } from '@/components/ComandaCard';
-import * as orderService from '@/services/orderService';
-import type { OrderDelayEstimate } from '@/types/order';
+import { ComandaCard } from '@/components/ComandaCard';
 import type { DeliveryDriver } from '@/types/deliveryDriver';
 import type { AdminOrder, SectorFilter } from '@/types/order';
 import { makeOrder } from '@/test/utils';
 
 vi.mock('@/services/orderService');
 
-const SMART: OrderDelayEstimate = {
-  mode: 'smart',
-  estimated_minutes: 25,
-  samples: 40,
-  min_samples: 30,
-  queue_size: 1,
-  suggested_minutes: 18,
-};
-const MANUAL: OrderDelayEstimate = {
-  mode: 'manual',
-  estimated_minutes: null,
-  samples: 12,
-  min_samples: 30,
-  queue_size: 1,
-  suggested_minutes: 18,
-};
-
 beforeEach(() => {
   vi.resetAllMocks();
-  vi.mocked(orderService.fetchOrderDelayEstimate).mockResolvedValue(SMART);
 });
 
 function renderCard(
@@ -39,6 +19,7 @@ function renderCard(
     onAssignDriver?: (orderId: number, driverId: number | null) => Promise<void>;
     onMarkPaid?: (orderId: number, isPaid: boolean) => Promise<void>;
     onAcknowledgeUpdate?: (orderId: number) => Promise<void>;
+    onMarkSeen?: (orderId: number) => Promise<void>;
     selectedSector?: SectorFilter;
     onItemPreparedChange?: (orderId: number, itemId: number, isPrepared: boolean) => Promise<void>;
     onSectorPrepared?: (orderId: number, sector: string, isPrepared: boolean) => Promise<void>;
@@ -57,6 +38,7 @@ function renderCard(
       onAssignDriver={onAssignDriver}
       onMarkPaid={extraProps.onMarkPaid}
       onAcknowledgeUpdate={extraProps.onAcknowledgeUpdate}
+      onMarkSeen={extraProps.onMarkSeen}
       activeDrivers={extraProps.activeDrivers}
       onOpenDetail={onOpenDetail}
       selectedSector={extraProps.selectedSector}
@@ -116,133 +98,23 @@ describe('ComandaCard', () => {
     expect(screen.getByText('Mostrador')).toBeInTheDocument();
   });
 
-  it('con historial suficiente muestra la demora automática y confirma sin pedir minutos', async () => {
-    const { onStatusChange, user } = renderCard();
-
-    expect(await screen.findByText('25 min')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Demora estimada en minutos')).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'Confirmar' }));
-
-    expect(onStatusChange).toHaveBeenCalledWith(101, 'Confirmado', undefined);
-  });
-
-  it('no explica de dónde sale la demora automática', async () => {
-    renderCard();
-
-    await screen.findByText('25 min');
-    expect(screen.queryByText(/historial|automática/i)).not.toBeInTheDocument();
-  });
-
-  it('con demora automática el empleado puede cambiarla y se envía la que cargó', async () => {
-    const { onStatusChange, user } = renderCard();
-
-    await user.click(await screen.findByRole('button', { name: 'Cambiar demora' }));
-    expect(screen.queryByText('25 min')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Confirmar' })).toBeDisabled();
-
-    await user.type(screen.getByLabelText('Demora estimada en minutos'), '50');
-    await user.click(screen.getByRole('button', { name: 'Confirmar' }));
-
-    expect(onStatusChange).toHaveBeenCalledWith(101, 'Confirmado', 50);
-  });
-
-  it('después de querer cambiarla puede volver a la demora automática', async () => {
-    const { onStatusChange, user } = renderCard();
-
-    await user.click(await screen.findByRole('button', { name: 'Cambiar demora' }));
-    await user.type(screen.getByLabelText('Demora estimada en minutos'), '50');
-    await user.click(screen.getByRole('button', { name: 'Volver a la automática' }));
-
-    expect(screen.getByText('25 min')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Confirmar' }));
-    expect(onStatusChange).toHaveBeenCalledWith(101, 'Confirmado', undefined);
-  });
-
-  it('mientras calcula la demora no deja confirmar', () => {
-    vi.mocked(orderService.fetchOrderDelayEstimate).mockReturnValue(new Promise(() => undefined));
-    renderCard();
-
-    expect(screen.getByText(/Calculando demora estimada/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Confirmar' })).toBeDisabled();
-  });
-
-  it('sin historial suficiente el empleado tiene que cargar la demora y se envía', async () => {
-    vi.mocked(orderService.fetchOrderDelayEstimate).mockResolvedValue(MANUAL);
-    const { onStatusChange, user } = renderCard();
-
-    const input = await screen.findByLabelText('Demora estimada en minutos');
-    expect(screen.getByText(/12 de 30 pedidos similares/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Confirmar' })).toBeDisabled();
-
-    await user.type(input, '35');
-    await user.click(screen.getByRole('button', { name: 'Confirmar' }));
-
-    expect(onStatusChange).toHaveBeenCalledWith(101, 'Confirmado', 35);
-  });
-
-  it('al refrescar la estimación en segundo plano no parpadea ni pierde lo que escribió el empleado', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    try {
-      vi.mocked(orderService.fetchOrderDelayEstimate).mockResolvedValue(MANUAL);
-      const { user } = renderCard();
-      await user.type(await screen.findByLabelText('Demora estimada en minutos'), '35');
-      // La próxima consulta tarda: mientras espera, la tarjeta sigue mostrando lo anterior.
-      vi.mocked(orderService.fetchOrderDelayEstimate).mockReturnValue(new Promise(() => undefined));
-
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(ESTIMATE_REFRESH_INTERVAL_MS + 100);
-      });
-
-      expect(orderService.fetchOrderDelayEstimate).toHaveBeenCalledTimes(2);
-      expect(screen.queryByText(/Calculando demora estimada/)).not.toBeInTheDocument();
-      expect(screen.getByLabelText('Demora estimada en minutos')).toHaveValue(35);
-      expect(screen.getByRole('button', { name: 'Confirmar' })).toBeEnabled();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('si no se pudo consultar la estimación también pide la demora a mano', async () => {
-    vi.mocked(orderService.fetchOrderDelayEstimate).mockRejectedValue(new Error('sin conexión'));
-    renderCard();
-
-    expect(await screen.findByLabelText('Demora estimada en minutos')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Confirmar' })).toBeDisabled();
-  });
-
-  it.each(['0', '2.5'])('no deja confirmar con una demora inválida (%s)', async (value) => {
-    vi.mocked(orderService.fetchOrderDelayEstimate).mockResolvedValue(MANUAL);
-    const { user } = renderCard();
-
-    await user.type(await screen.findByLabelText('Demora estimada en minutos'), value);
-
-    expect(screen.getByRole('button', { name: 'Confirmar' })).toBeDisabled();
-  });
-
-  it('rechazar un pendiente', async () => {
-    const { onStatusChange, user } = renderCard();
-
-    await user.click(screen.getByRole('button', { name: 'Rechazar' }));
-
-    expect(onStatusChange).toHaveBeenCalledWith(101, 'Rechazado', undefined);
-  });
-
   it('no ofrece cancelar en la tarjeta: eso se hace desde el detalle', () => {
     renderCard({ status: 'Confirmado' });
 
     expect(screen.queryByRole('button', { name: /Cancelar/ })).not.toBeInTheDocument();
   });
 
-  it('un programado muestra su horario y se confirma sin demora', async () => {
-    const { onStatusChange, user } = renderCard({ scheduled_for: '2026-10-04T00:30:00Z' }); // 21:30 en Argentina
+  it('un programado muestra su horario y no lleva demora estimada', () => {
+    renderCard({ scheduled_for: '2026-10-04T00:30:00Z' }); // 21:30 en Argentina
 
     expect(screen.getByText('21:30')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Demora estimada en minutos')).not.toBeInTheDocument();
-    expect(orderService.fetchOrderDelayEstimate).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Estimado/)).not.toBeInTheDocument();
+  });
 
-    await user.click(screen.getByRole('button', { name: 'Confirmar' }));
-    expect(onStatusChange).toHaveBeenCalledWith(101, 'Confirmado', undefined);
+  it('un pedido sin demora no muestra el cartel de estimado', () => {
+    renderCard({ estimated_minutes: null });
+
+    expect(screen.queryByText(/Estimado/)).not.toBeInTheDocument();
   });
 
   it.each([
@@ -254,7 +126,7 @@ describe('ComandaCard', () => {
     expect(screen.getByText('Estimado: 30 min')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: label }));
 
-    expect(onStatusChange).toHaveBeenCalledWith(101, next, undefined);
+    expect(onStatusChange).toHaveBeenCalledWith(101, next);
   });
 
   it.each([
@@ -265,7 +137,7 @@ describe('ComandaCard', () => {
 
     await user.click(screen.getByRole('button', { name: 'Finalizar' }));
 
-    expect(onStatusChange).toHaveBeenCalledWith(101, 'Finalizado', undefined);
+    expect(onStatusChange).toHaveBeenCalledWith(101, 'Finalizado');
   });
 
   it('un pedido En Camino sin viaje iniciado está armando viaje: no se finaliza hasta que salga', () => {
@@ -304,19 +176,17 @@ describe('ComandaCard', () => {
     const { onStatusChange, user } = renderCard();
     onStatusChange.mockReturnValue(new Promise<void>((r) => (resolve = r)));
 
-    await screen.findByText('25 min');
-    await user.click(screen.getByRole('button', { name: 'Confirmar' }));
+    await user.click(screen.getByRole('button', { name: 'Marcar En Camino' }));
 
-    expect(screen.getByRole('button', { name: 'Confirmar' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Rechazar' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Marcar En Camino' })).toBeDisabled();
     resolve();
-    expect(await screen.findByRole('button', { name: 'Rechazar' })).toBeEnabled();
+    expect(await screen.findByRole('button', { name: 'Marcar En Camino' })).toBeEnabled();
   });
 
   it('abre el detalle al tocar la tarjeta pero no al usar sus botones', async () => {
     const { order, onOpenDetail, user } = renderCard();
 
-    await user.click(screen.getByRole('button', { name: 'Rechazar' }));
+    await user.click(screen.getByRole('button', { name: 'Marcar En Camino' }));
     expect(onOpenDetail).not.toHaveBeenCalled();
 
     await user.click(screen.getByText('Paula Gómez'));
@@ -326,10 +196,27 @@ describe('ComandaCard', () => {
     expect(onOpenDetail).toHaveBeenCalledTimes(2);
   });
 
-  it('marca en rojo los pendientes sin atender hace más de 2 minutos', () => {
-    renderCard({ created_at: minutes(5) });
+  it('un pedido nuevo avisa que es nuevo y se marca como visto', async () => {
+    const onMarkSeen = vi.fn().mockResolvedValue(undefined);
+    const { user } = renderCard({ needs_attention: true }, { onMarkSeen });
 
-    expect(screen.getByText('5min')).toHaveClass('bg-red-100', 'animate-pulse');
+    expect(screen.getByText('Pedido nuevo')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Visto' }));
+
+    expect(onMarkSeen).toHaveBeenCalledWith(101);
+  });
+
+  it('un pedido ya visto no muestra el aviso de pedido nuevo', () => {
+    renderCard({ needs_attention: false });
+
+    expect(screen.queryByText('Pedido nuevo')).not.toBeInTheDocument();
+  });
+
+  it('ya no hay acciones de aceptar ni rechazar', () => {
+    renderCard();
+
+    expect(screen.queryByRole('button', { name: 'Confirmar' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Rechazar' })).not.toBeInTheDocument();
   });
 
   it('marca como atrasado un confirmado que superó su demora', () => {
@@ -443,7 +330,7 @@ describe('ComandaCard', () => {
     expect(screen.queryByRole('combobox', { name: 'Asignar repartidor' })).not.toBeInTheDocument();
   });
 
-  it('un pedido en Confirmado o Pendiente no muestra opción para asignar repartidor', () => {
+  it('un pedido en Confirmado no muestra opción para asignar repartidor', () => {
     const drivers: DeliveryDriver[] = [
       { id: 1, name: 'Marcos Envíos', phone: '11 1111-2222', is_active: true, created_at: '', updated_at: '' },
     ];
@@ -470,7 +357,7 @@ describe('ComandaCard', () => {
     expect(screen.getByText('Medio de pago sin definir')).toBeInTheDocument();
   });
 
-  it.each(['Pendiente', 'Confirmado', 'En Camino', 'Listo para Retirar'] as const)(
+  it.each(['Confirmado', 'En Camino', 'Listo para Retirar'] as const)(
     'una comanda %s muestra si está abonada o pendiente de pago',
     (status) => {
       const { unmount } = render(

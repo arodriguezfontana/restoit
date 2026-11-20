@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
+from app.models.delay_rule import DelayRule
 from app.models.order import Order
 from app.services.tools.order_tools import (
     _parsear_hora,
@@ -185,12 +186,13 @@ def test_observaciones_largas_se_recortan(products):
 # --- confirmar_y_guardar_pedido ---
 
 
-def test_registra_el_pedido_pendiente_con_el_chat_de_telegram(db_session, products):
+def test_registra_el_pedido_directo_en_preparacion_con_el_chat_de_telegram(db_session, products):
     resultado = _confirmar(_datos(products), chat_id="98765")
 
     assert "Recibimos tu pedido" in resultado
     order = db_session.query(Order).one()
-    assert order.status == "Pendiente"
+    assert order.status == "Confirmado"
+    assert order.needs_attention is True
     assert order.source == "bot"
     assert (order.channel, order.chat_id) == ("telegram", "98765")
     assert order.delivery_method == "domicilio"
@@ -287,19 +289,47 @@ def test_calcular_y_preparar_pedido_ofrece_efectivo_y_mercadopago(products):
     assert "MercadoPago" in res["mensaje_para_usuario"]
 
 
-def test_confirmar_y_guardar_pedido_con_mercadopago_no_manda_el_link_antes_de_que_lo_acepten(db_session, products):
+def test_confirmar_y_guardar_pedido_con_mercadopago_manda_el_link_al_registrarlo(db_session, products):
     datos = _datos(products, metodo_pago="mercadopago")
-    resultado = _confirmar(datos)
+    resultado = _confirmar(datos, chat_id="98765")
 
     assert "Recibimos tu pedido" in resultado
     assert "MercadoPago" in resultado
-    assert "cuando el local acepte tu pedido" in resultado
-    assert "https://" not in resultado
+    assert "Link de pago de MercadoPago" in resultado
+    assert "https://" in resultado
 
     order = db_session.query(Order).one()
     assert order.payment_method == "mercadopago"
     assert order.is_paid is False
-    assert order.mp_preference_id is None
+    assert order.mp_preference_id
+
+
+def test_el_mensaje_del_pedido_no_promete_demora_si_no_hay_ninguna_configurada(db_session, products):
+    resultado = _confirmar(_datos(products), chat_id="98765")
+
+    assert "Tiempo estimado" not in resultado
+    assert "Ya lo estamos preparando" in resultado
+    assert db_session.query(Order).one().estimated_minutes is None
+
+
+def test_el_mensaje_del_pedido_informa_la_demora_de_la_regla_fija(db_session, products):
+    db_session.add(DelayRule(delivery_method="domicilio", min_orders=0, max_orders=None, minutes=35))
+    db_session.commit()
+
+    resultado = _confirmar(_datos(products), chat_id="98765")
+
+    assert "Tiempo estimado de entrega: 35 minutos" in resultado
+    order = db_session.query(Order).one()
+    assert (order.estimated_minutes, order.estimate_source) == (35, "fixed")
+
+
+def test_el_pedido_del_bot_imprime_la_comanda_al_registrarse(db_session, products):
+    with patch("app.services.tools.order_tools.printer_service.print_order") as imprimir:
+        imprimir.return_value.success = True
+        _confirmar(_datos(products), chat_id="98765")
+
+    imprimir.assert_called_once()
+    assert imprimir.call_args.args[1].id == db_session.query(Order).one().id
 
 
 # --- Pizzas Mitad y Mitad ---

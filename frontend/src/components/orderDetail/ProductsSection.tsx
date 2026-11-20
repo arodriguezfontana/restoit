@@ -52,16 +52,12 @@ function ProductsContent({
 }
 
 interface LoadState {
-  simulated: boolean;
   loading: boolean;
   error: string | null;
   onRetry: () => void;
 }
 
-function ProductsStatus({ simulated, loading, error, onRetry }: LoadState) {
-  if (simulated) {
-    return <p className="text-sm text-gray-500">El detalle de productos no está disponible en el modo simulación.</p>;
-  }
+function ProductsStatus({ loading, error, onRetry }: LoadState) {
   if (loading) return <p className="text-sm text-gray-500">Cargando productos…</p>;
   return (
     <div role="alert" className="rounded-xl bg-red-50 text-red-700 px-4 py-3 text-sm flex items-center justify-between gap-3">
@@ -82,7 +78,7 @@ interface ProductsSectionProps extends LoadState {
 
 /** Productos del pedido (o el estado de la carga) y las aclaraciones del cliente. */
 export function ProductsSection({ order, detail, acknowledging, onAcknowledge, ...loadState }: ProductsSectionProps) {
-  const isWaitingOrFailed = loadState.simulated || loadState.loading || loadState.error;
+  const isWaitingOrFailed = loadState.loading || loadState.error;
   return (
     <Section title="Productos">
       {isWaitingOrFailed ? (

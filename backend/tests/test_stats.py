@@ -34,22 +34,22 @@ def _order(db_session, status="Finalizado", created_at=LUNES_MEDIODIA, items=(),
 
 
 def test_distribucion_por_estado_cuenta_todos_los_pedidos(client, db_session):
-    for status in ["Pendiente", "Pendiente", "Confirmado", "Finalizado", "Rechazado"]:
+    for status in ["Confirmado", "Confirmado", "En Camino", "Finalizado", "Cancelado"]:
         _order(db_session, status=status, total=100)
 
     response = client.get(f"{STATS_URL}/status-distribution")
 
     assert response.status_code == 200
     assert response.json()["status_distribution"] == {
-        "Pendiente": 2,
-        "Confirmado": 1,
+        "Confirmado": 2,
+        "En Camino": 1,
         "Finalizado": 1,
-        "Rechazado": 1,
+        "Cancelado": 1,
     }
 
 
 def test_distribucion_respeta_el_rango_de_fechas(client, db_session):
-    _order(db_session, status="Pendiente", created_at=LUNES_MEDIODIA, total=100)
+    _order(db_session, status="Confirmado", created_at=LUNES_MEDIODIA, total=100)
     _order(db_session, status="Finalizado", created_at=SABADO_MEDIODIA, total=100)
 
     response = client.get(
@@ -57,7 +57,7 @@ def test_distribucion_respeta_el_rango_de_fechas(client, db_session):
         params={"date_from": "2026-09-28T00:00:00Z", "date_to": "2026-09-30T00:00:00Z"},
     )
 
-    assert response.json()["status_distribution"] == {"Pendiente": 1}
+    assert response.json()["status_distribution"] == {"Confirmado": 1}
 
 
 def test_distribucion_sin_pedidos_devuelve_vacio(client, db_session):
@@ -78,9 +78,8 @@ def test_top_productos_ordena_por_cantidad_y_suma_ingresos(client, db_session, p
     ]
 
 
-@pytest.mark.parametrize("status", ["Rechazado", "Cancelado"])
-def test_top_productos_no_cuenta_pedidos_rechazados_ni_cancelados(client, db_session, products, status):
-    _order(db_session, status=status, items=[(products["coca"], 10)])
+def test_top_productos_no_cuenta_pedidos_cancelados(client, db_session, products):
+    _order(db_session, status="Cancelado", items=[(products["coca"], 10)])
     _order(db_session, status="Finalizado", items=[(products["muzza"], 1)])
 
     nombres = [p["product_name"] for p in client.get(f"{STATS_URL}/top-products").json()]
@@ -117,9 +116,8 @@ def test_dia_mas_rentable_suma_la_facturacion_por_dia_de_la_semana(client, db_se
     assert response.json() == {"best_selling_day": "Sábado", "total_revenue": 5000.0}
 
 
-@pytest.mark.parametrize("status", ["Rechazado", "Cancelado"])
-def test_dia_mas_rentable_no_cuenta_pedidos_rechazados_ni_cancelados(client, db_session, status):
-    _order(db_session, status=status, created_at=SABADO_MEDIODIA, total=99999)
+def test_dia_mas_rentable_no_cuenta_pedidos_cancelados(client, db_session):
+    _order(db_session, status="Cancelado", created_at=SABADO_MEDIODIA, total=99999)
     _order(db_session, status="Finalizado", created_at=LUNES_MEDIODIA, total=100)
 
     assert client.get(f"{STATS_URL}/best-selling-day").json()["best_selling_day"] == "Lunes"

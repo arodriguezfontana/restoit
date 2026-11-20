@@ -1,9 +1,11 @@
 """US-65: configuración de la demora (inteligente y reglas fijas por método de entrega)."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from app.models.order import Order, OrderStatusEvent
+from app.services import order_service
 from app.services.delivery_time_service import MIN_SAMPLES_FOR_SMART_ESTIMATE, estimate_delay
+from app.services.order_service import OrderRequest
 
 URL = "/api/v1/delay-settings"
 
@@ -15,7 +17,20 @@ def _regla(client, metodo, desde, hasta, minutos):
     )
 
 
-def _pedido(db_session, status="Pendiente", metodo="domicilio"):
+def _nuevo_pedido(db_session, products, metodo="domicilio"):
+    """Pedido que entra por el chat (queda tomado directamente, con la demora que corresponda)."""
+    request = OrderRequest(
+        customer_name="Ana",
+        customer_phone="1155551234",
+        delivery_method=metodo,
+        shipping_address="Calle 1",
+        notes=None,
+        items=[(products["muzza"].id, 1)],
+    )
+    return order_service.create_bot_order(db_session, request, None, None, None, None)
+
+
+def _pedido(db_session, status="Confirmado", metodo="domicilio"):
     order = Order(
         customer_name="Ana", shipping_address="Calle 1", total_amount=100.0, status=status, delivery_method=metodo
     )
@@ -109,16 +124,12 @@ def test_editar_y_eliminar_una_regla(client):
     assert client.delete(f"{URL}/rules/{primera['id']}").status_code == 404
 
 
-def test_se_aplica_la_regla_fija_al_aceptar_un_pedido(client, db_session):
+def test_se_aplica_la_regla_fija_cuando_entra_un_pedido(client, db_session, products):
     _regla(client, "domicilio", 0, 10, 30)
-    order = _pedido(db_session)
 
-    estimate = client.get(f"/api/v1/orders/{order.id}/estimate").json()
-    assert (estimate["mode"], estimate["estimated_minutes"]) == ("fixed", 30)
+    order = _nuevo_pedido(db_session, products)
 
-    respuesta = client.patch(f"/api/v1/orders/{order.id}/status", json={"status": "Confirmado"})
-    assert respuesta.status_code == 200
-    assert (respuesta.json()["estimated_minutes"], respuesta.json()["estimate_source"]) == (30, "fixed")
+    assert (order.status, order.estimated_minutes, order.estimate_source) == ("Confirmado", 30, "fixed")
 
 
 def test_la_regla_depende_de_los_pedidos_en_cola(client, db_session):
@@ -132,13 +143,13 @@ def test_la_regla_depende_de_los_pedidos_en_cola(client, db_session):
     assert estimate_delay(db_session, "retiro", 0).minutes is None
 
 
-def test_sin_regla_aplicable_el_personal_indica_la_demora(client, db_session):
+def test_sin_regla_aplicable_el_pedido_entra_sin_demora_y_el_personal_puede_cargarla(client, db_session, products):
     _regla(client, "domicilio", 5, 10, 30)
-    order = _pedido(db_session)
 
-    assert client.get(f"/api/v1/orders/{order.id}/estimate").json()["mode"] == "manual"
-    assert client.patch(f"/api/v1/orders/{order.id}/status", json={"status": "Confirmado"}).status_code == 400
-    manual = client.patch(f"/api/v1/orders/{order.id}/status", json={"status": "Confirmado", "estimated_minutes": 45})
+    order = _nuevo_pedido(db_session, products)
+
+    assert (order.estimated_minutes, order.estimate_source) == (None, None)
+    manual = client.patch(f"/api/v1/orders/{order.id}/delay", json={"estimated_minutes": 45})
     assert (manual.json()["estimated_minutes"], manual.json()["estimate_source"]) == (45, "manual")
 
 
@@ -171,13 +182,54 @@ def test_con_la_inteligente_desactivada_solo_rigen_las_reglas(client, db_session
     assert other.minutes is None
 
 
-def test_cambiar_la_configuracion_no_altera_pedidos_ya_aceptados(client, db_session):
+def test_cambiar_la_configuracion_no_altera_pedidos_ya_tomados(client, db_session, products):
     regla = _regla(client, "domicilio", 0, None, 30).json()
-    order = _pedido(db_session)
-    client.patch(f"/api/v1/orders/{order.id}/status", json={"status": "Confirmado"})
+    order = _nuevo_pedido(db_session, products)
 
     client.put(f"{URL}/rules/{regla['id']}", json={"min_orders": 0, "max_orders": None, "minutes": 99})
     client.put(f"{URL}/smart", json={"enabled": False})
 
     db_session.refresh(order)
     assert (order.estimated_minutes, order.estimate_source) == (30, "fixed")
+
+
+def test_un_pedido_programado_entra_sin_demora_y_no_cuenta_en_la_cola(client, db_session, products):
+    _regla(client, "domicilio", 0, 0, 30)
+    request = OrderRequest(
+        customer_name="Ana",
+        customer_phone="1155551234",
+        delivery_method="domicilio",
+        shipping_address="Calle 1",
+        notes=None,
+        items=[(products["muzza"].id, 1)],
+    )
+    programado = datetime.now(timezone.utc) + timedelta(hours=3)
+
+    pedido = order_service.create_bot_order(db_session, request, None, None, programado, None)
+    assert (pedido.status, pedido.estimated_minutes, pedido.estimate_source) == ("Confirmado", None, None)
+
+    # El programado no ocupa la cocina: el siguiente pedido para ahora sigue entrando con la regla de cola vacía.
+    siguiente = _nuevo_pedido(db_session, products)
+    assert (siguiente.estimated_minutes, siguiente.estimate_source) == (30, "fixed")
+
+
+def test_un_pedido_de_mostrador_toma_la_regla_fija_y_no_activa_la_alerta(client, db_session, products, open_shift):
+    _regla(client, "domicilio", 0, None, 25)
+
+    respuesta = client.post(
+        "/api/v1/orders/counter",
+        json={
+            "customer_name": "Paula",
+            "customer_phone": "11 4444-5555",
+            "delivery_method": "domicilio",
+            "shipping_address": "Belgrano 95",
+            "items": [{"product_id": products["muzza"].id, "quantity": 1}],
+            "payment_method": "efectivo",
+            "is_paid": False,
+        },
+    )
+
+    assert respuesta.status_code == 201
+    order = db_session.get(Order, respuesta.json()["id"])
+    assert (order.estimated_minutes, order.estimate_source) == (25, "fixed")
+    assert order.needs_attention is False

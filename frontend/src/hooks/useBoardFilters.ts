@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { SectorFilter } from '@/types/order';
 import { FIRST_PAGES } from '@/utils/orderBoard';
-import type { ColumnPages, PendingFilter } from '@/utils/orderBoard';
+import type { ColumnPages, TimingFilter } from '@/utils/orderBoard';
 
 const SEARCH_DEBOUNCE_MS = 250;
 const SECTOR_STORAGE_KEY = 'resto_comandas_sector';
@@ -30,7 +30,7 @@ function saveSector(sector: SectorFilter): void {
 export function useBoardFilters() {
   const [pageSize, setPageSize] = useState<number>(5);
   const [pages, setPages] = useState<ColumnPages>(FIRST_PAGES);
-  const [pendingFilter, setPendingFilter] = useState<PendingFilter>('ahora');
+  const [timingFilter, setTimingFilter] = useState<TimingFilter>('ahora');
   const [selectedSector, setSelectedSector] = useState<SectorFilter>(readSavedSector);
 
   // Buscador: lo que se escribe se aplica al tablero con una pequeña demora para no filtrar en cada tecla.
@@ -55,9 +55,9 @@ export function useBoardFilters() {
     setPages(FIRST_PAGES);
   };
 
-  const changePendingFilter = (filter: PendingFilter) => {
-    setPendingFilter(filter);
-    setPages((previous) => ({ ...previous, Pendiente: 1 }));
+  const changeTimingFilter = (filter: TimingFilter) => {
+    setTimingFilter(filter);
+    setPages((previous) => ({ ...previous, Confirmado: 1 }));
   };
 
   const changePage = (status: string, page: number) => {
@@ -68,14 +68,14 @@ export function useBoardFilters() {
     pageSize,
     setPageSize,
     pages,
-    pendingFilter,
+    timingFilter,
     selectedSector,
     searchInput,
     setSearchInput,
     searchTerm,
     clearSearch,
     changeSector,
-    changePendingFilter,
+    changeTimingFilter,
     changePage,
   };
 }

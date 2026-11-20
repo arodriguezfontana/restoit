@@ -20,7 +20,7 @@ def sample_order(db_session, products):
         customer_name="Lucas Gómez",
         shipping_address="Av. Corrientes 500",
         total_amount=17000.0,
-        status="Pendiente",
+        status="Confirmado",
         delivery_method=DeliveryMethod.DELIVERY.value,
         channel="telegram",
         chat_id="12345678",

@@ -37,15 +37,12 @@ from app.services.tools.order_tools import items_del_modelo, normalizar_metodo_p
 logger = logging.getLogger(__name__)
 
 # Estados en los que el pedido ya terminó: no hay nada para modificar.
-_ESTADOS_TERMINADOS = (OrderStatus.COMPLETED, OrderStatus.REJECTED, OrderStatus.CANCELLED)
+_ESTADOS_TERMINADOS = (OrderStatus.COMPLETED, OrderStatus.CANCELLED)
 
 MENSAJE_SIN_CANAL = "Por este medio no puedo modificar pedidos. Podés comunicarte con el local directamente."
 MENSAJE_SIN_PEDIDO = (
     "No encuentro un pedido tuyo para modificar. Si querés hacer uno nuevo, contame qué te gustaría pedir."
 )
-
-
-AVISO_LINK_AL_ACEPTAR = "Te pasamos el link de pago cuando el local acepte tu pedido."
 
 
 def _mensaje_en_camino(order: Order) -> str:
@@ -129,8 +126,6 @@ def _como_se_paga_tras_agregar(db: Session, order: Order) -> str:
     if order.payment_method != PaymentMethod.MERCADOPAGO.value:
         como = PAYMENT_PHRASES.get(order.payment_method or PaymentMethod.CASH.value, "en efectivo")
         return f"{nuevo_total} Lo abonás {como} {_cuando_se_abona(order)}."
-    if order.status == OrderStatus.PENDING.value:
-        return f"{nuevo_total} {AVISO_LINK_AL_ACEPTAR}"
     # El link anterior era por el total viejo: se genera uno nuevo por el total actualizado.
     link = _link_de_pago(db, order, diferencia=False)
     return (
@@ -212,8 +207,6 @@ def _confirmacion_de_pago_cambiado(db: Session, order: Order, metodo: str) -> st
                 f"{transfer_instructions(db)} y mandame por este chat una foto del comprobante."
             )
         return f"Listo ✅ Abonás {que_se_paga} ({_plata(monto)}) {como} {_cuando_se_abona(order)}."
-    if order.status == OrderStatus.PENDING.value:
-        return f"Listo ✅ Pagás {que_se_paga} ({_plata(monto)}) por MercadoPago. {AVISO_LINK_AL_ACEPTAR}"
     link = _link_de_pago(db, order, diferencia=parcial)
     return (
         f"Listo ✅ Te paso el link de MercadoPago por {que_se_paga} ({_plata(monto)}):\n{link}\n"

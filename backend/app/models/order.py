@@ -53,13 +53,12 @@ class _StrEnum(str, Enum):
 
 
 class OrderStatus(_StrEnum):
-    PENDING = "Pendiente"
+    # Todos los pedidos entran directamente en preparación: el local no los acepta ni los rechaza.
     CONFIRMED = "Confirmado"
     ON_THE_WAY = "En Camino"
     READY_FOR_PICKUP = "Listo para Retirar"
     COMPLETED = "Finalizado"
-    REJECTED = "Rechazado"
-    # El local da de baja un pedido ya aceptado (o todavía sin responder) antes de entregarlo.
+    # El local da de baja un pedido antes de entregarlo.
     CANCELLED = "Cancelado"
 
 
@@ -86,14 +85,14 @@ class EstimateSource(_StrEnum):
     SMART = "smart"
     # Regla de demora fija del método de entrega configurada por el local.
     FIXED = "fixed"
-    # La indicó el personal al aceptar el pedido.
+    # La cargó o modificó el personal a mano.
     MANUAL = "manual"
-    # Demora estándar del local, cuando no hay quien la indique (pedidos que entran ya aceptados).
+    # Demora estándar del local. Ya no se asigna (sin demora configurada no se informa ninguna); quedó en pedidos viejos.
     DEFAULT = "default"
 
 
 # Estados en los que el pedido no se llegó a vender: no suman a las ventas ni a las estadísticas.
-_NOT_BILLABLE_STATUSES = (OrderStatus.REJECTED, OrderStatus.CANCELLED)
+_NOT_BILLABLE_STATUSES = (OrderStatus.CANCELLED,)
 
 
 def _values(enum: type[Enum]) -> tuple[str, ...]:
@@ -109,7 +108,7 @@ PICKUP_ADDRESS = "Retiro en el local"
 MODIFICATION_WINDOW = timedelta(minutes=10)
 
 # Estados en los que el pedido todavía no salió: solo ahí se puede cambiar el medio de pago o sumar productos.
-_MODIFIABLE_STATUSES = (OrderStatus.PENDING, OrderStatus.CONFIRMED)
+_MODIFIABLE_STATUSES = (OrderStatus.CONFIRMED,)
 
 
 class InvalidOrderError(BusinessRuleError):
@@ -134,9 +133,8 @@ class PaymentChangeNotAllowedError(BusinessRuleError):
     """El medio de pago no se puede cambiar (ej. el pedido ya está abonado)."""
 
 
-class ScheduledOrderEstimateError(BusinessRuleError):
-    def __init__(self):
-        super().__init__("Los pedidos programados se entregan en su horario y no llevan demora estimada.")
+class EstimateNotAllowedError(BusinessRuleError):
+    """La demora estimada solo se puede cargar en pedidos para ahora que todavía no terminaron."""
 
 
 def clean_pizza_flavor(product_name: str) -> str:
@@ -323,12 +321,10 @@ class Order(Base):
     # Ciclo de vida del pedido: a qué estados puede pasar desde cada uno.
     # Cualquier pedido que todavía no terminó se puede cancelar.
     ALLOWED_TRANSITIONS: ClassVar[dict[OrderStatus, frozenset[OrderStatus]]] = {
-        OrderStatus.PENDING: frozenset({OrderStatus.CONFIRMED, OrderStatus.REJECTED, OrderStatus.CANCELLED}),
         OrderStatus.CONFIRMED: frozenset({OrderStatus.ON_THE_WAY, OrderStatus.READY_FOR_PICKUP, OrderStatus.CANCELLED}),
         OrderStatus.ON_THE_WAY: frozenset({OrderStatus.COMPLETED, OrderStatus.CANCELLED}),
         OrderStatus.READY_FOR_PICKUP: frozenset({OrderStatus.COMPLETED, OrderStatus.CANCELLED}),
         OrderStatus.COMPLETED: frozenset(),
-        OrderStatus.REJECTED: frozenset(),
         OrderStatus.CANCELLED: frozenset(),
     }
 
@@ -353,7 +349,9 @@ class Order(Base):
     balance_payment_method: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # Se agregaron productos y cocina todavía no lo vio (alerta en el tablero de comandas).
     kitchen_update_pending: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
-    status: Mapped[str] = mapped_column(String(50), nullable=False, default=OrderStatus.PENDING.value)
+    # Pedido nuevo que el personal todavía no vio: el tablero lo avisa con una alerta sonora hasta que lo ve.
+    needs_attention: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default=OrderStatus.CONFIRMED.value)
     delivery_method: Mapped[str] = mapped_column(String(20), nullable=False, server_default=DeliveryMethod.DELIVERY.value)
     # Pedidos del bot: canal por el que habló el cliente y su chat en ese canal (para avisarle novedades).
     channel: Mapped[str | None] = mapped_column(String(20), nullable=True)
@@ -367,7 +365,7 @@ class Order(Base):
     customer_phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     estimated_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # De dónde salió la demora estimada: del historial del local, la cargó el personal o es la estándar.
+    # De dónde salió la demora estimada: del historial del local, de una regla fija o la cargó el personal.
     estimate_source: Mapped[str | None] = mapped_column(String(10), nullable=True)
     # Viaje en el que salió el pedido (None mientras el viaje se está armando), su parada y la llegada estimada.
     trip_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("delivery_trips.id", ondelete="SET NULL"), nullable=True, index=True)
@@ -441,7 +439,7 @@ class Order(Base):
 
     @hybrid_property
     def is_billable(self) -> bool:
-        """Cuenta como venta: todos los pedidos menos los rechazados y los cancelados."""
+        """Cuenta como venta: todos los pedidos menos los cancelados."""
         return self.status not in _NOT_BILLABLE_STATUSES
 
     @is_billable.inplace.expression
@@ -577,40 +575,30 @@ class Order(Base):
     def can_transition_to(self, new_status: OrderStatus | str) -> bool:
         return OrderStatus(new_status) in self.ALLOWED_TRANSITIONS[OrderStatus(self.status)]
 
-    def transition_to(
-        self,
-        new_status: OrderStatus | str,
-        estimated_minutes: int | None,
-        current_delay_minutes: int,
-        estimate_source: "EstimateSource | None" = None,
-    ) -> None:
-        """Avanza el pedido en su ciclo de vida.
-
-        Al confirmar un pedido para ahora se registra la demora estimada: la indicada o, si no se indica,
-        la demora actual del local. Los pedidos programados se entregan en su horario y no llevan demora.
-        """
+    def transition_to(self, new_status: OrderStatus | str) -> None:
+        """Avanza el pedido en su ciclo de vida."""
         new_status = OrderStatus(new_status)
         # Un pedido que quedó abierto al cerrar la caja se puede seguir entregando (el reparto no toca el dinero del
-        # turno), pero no cancelarlo ni rechazarlo: eso lo sacaría de las ventas de un turno que ya está sellado.
+        # turno), pero no cancelarlo: eso lo sacaría de las ventas de un turno que ya está sellado.
         if self.is_shift_closed and new_status in _NOT_BILLABLE_STATUSES:
             raise BusinessRuleError("El turno de caja de este pedido ya está cerrado.")
 
         if not self.can_transition_to(new_status):
             raise InvalidTransitionError(self.status, new_status.value)
 
-        is_scheduled = self.scheduled_for is not None
-        if is_scheduled and estimated_minutes is not None:
-            raise ScheduledOrderEstimateError()
-        if not is_scheduled and new_status == OrderStatus.CONFIRMED and estimated_minutes is None:
-            estimated_minutes = current_delay_minutes
-            estimate_source = EstimateSource.DEFAULT
-
         self.status = new_status.value
         if new_status == OrderStatus.COMPLETED:
             self.actual_minutes = self._minutes_since_created()
-        if estimated_minutes is not None:
-            self.estimated_minutes = estimated_minutes
-            self.estimate_source = (estimate_source or EstimateSource.MANUAL).value
+            self.needs_attention = False
+
+    def set_estimated_minutes(self, minutes: int, source: "EstimateSource" = EstimateSource.MANUAL) -> None:
+        """Guarda la demora estimada. Los pedidos programados se entregan en su horario y no llevan demora."""
+        if self.scheduled_for is not None:
+            raise EstimateNotAllowedError("Los pedidos programados se entregan en su horario y no llevan demora estimada.")
+        if OrderStatus(self.status) not in (OrderStatus.CONFIRMED, OrderStatus.ON_THE_WAY, OrderStatus.READY_FOR_PICKUP):
+            raise EstimateNotAllowedError("Solo se puede modificar la demora de un pedido que todavía no terminó.")
+        self.estimated_minutes = minutes
+        self.estimate_source = source.value
 
     def _minutes_since_created(self) -> int | None:
         """Minutos que pasaron desde que el pedido ingresó al sistema (None si todavía no se guardó)."""
@@ -712,7 +700,7 @@ class OrderItem(Base):
 
 
 class OrderStatusEvent(Base):
-    """Cada cambio de estado de un pedido, con el momento exacto y cuántos pedidos había en cola (aceptados y
+    """Cada cambio de estado de un pedido, con el momento exacto y cuántos pedidos había en cola (para ahora y
     todavía sin despachar). Es el historial real del local con el que se estiman las demoras (ver
     delivery_time_service)."""
 
@@ -732,7 +720,11 @@ def _record_status_event(connection, order: "Order") -> None:
     queue_size = connection.execute(
         select(func.count())
         .select_from(Order.__table__)
-        .where(Order.__table__.c.status == OrderStatus.CONFIRMED.value, Order.__table__.c.id != order.id)
+        .where(
+            Order.__table__.c.status == OrderStatus.CONFIRMED.value,
+            Order.__table__.c.scheduled_for.is_(None),
+            Order.__table__.c.id != order.id,
+        )
     ).scalar()
     connection.execute(
         insert(cast(Table, OrderStatusEvent.__table__)).values(

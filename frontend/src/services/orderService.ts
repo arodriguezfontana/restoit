@@ -3,7 +3,6 @@ import type {
   AdminOrder,
   CounterOrderPayload,
   DeliveryTrip,
-  OrderDelayEstimate,
   OrderDetail,
   OrderStatus,
   PaymentMethod,
@@ -41,21 +40,20 @@ export async function fetchOrderDetail(orderId: number, signal?: AbortSignal): P
   return data;
 }
 
-/** Cómo se va a estimar la demora si se acepta el pedido ahora (automática o manual). */
-export async function fetchOrderDelayEstimate(orderId: number, signal?: AbortSignal): Promise<OrderDelayEstimate> {
-  const { data } = await api.get<OrderDelayEstimate>(`/orders/${orderId}/estimate`, { signal });
+export async function updateOrderStatus(orderId: number, status: OrderStatus): Promise<AdminOrder> {
+  const { data } = await api.patch<AdminOrder>(`/orders/${orderId}/status`, { status });
   return data;
 }
 
-export async function updateOrderStatus(
-  orderId: number,
-  status: OrderStatus,
-  estimatedMinutes?: number
-): Promise<AdminOrder> {
-  const { data } = await api.patch<AdminOrder>(`/orders/${orderId}/status`, {
-    status,
-    ...(estimatedMinutes !== undefined ? { estimated_minutes: estimatedMinutes } : {}),
-  });
+/** El personal carga o modifica a mano la demora estimada de un pedido. */
+export async function updateOrderDelay(orderId: number, estimatedMinutes: number): Promise<AdminOrder> {
+  const { data } = await api.patch<AdminOrder>(`/orders/${orderId}/delay`, { estimated_minutes: estimatedMinutes });
+  return data;
+}
+
+/** El personal vio el pedido nuevo: se apaga su alerta sonora. */
+export async function markOrderSeen(orderId: number): Promise<AdminOrder> {
+  const { data } = await api.post<AdminOrder>(`/orders/${orderId}/seen`);
   return data;
 }
 

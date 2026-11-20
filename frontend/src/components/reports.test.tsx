@@ -21,7 +21,7 @@ function kpi(label: string) {
 
 const HISTORY = [
   makeOrder({ id: 1, customer_name: 'Ana', status: 'Finalizado', total_amount: 10000, created_at: new Date(2026, 9, 3, 12).toISOString() }),
-  makeOrder({ id: 2, customer_name: 'Beto', status: 'Rechazado', total_amount: 99999, created_at: new Date(2026, 9, 3, 13).toISOString() }),
+  makeOrder({ id: 2, customer_name: 'Beto', status: 'Cancelado', total_amount: 99999, created_at: new Date(2026, 9, 3, 13).toISOString() }),
   makeOrder({ id: 3, customer_name: 'Caro', status: 'Confirmado', total_amount: 5000, created_at: new Date(2026, 9, 2, 20).toISOString() }),
 ];
 
@@ -38,14 +38,14 @@ afterEach(() => {
 });
 
 describe('HistorialView', () => {
-  it('pide la última semana y factura solo los pedidos no rechazados', async () => {
+  it('pide la última semana y factura solo los pedidos no cancelados', async () => {
     render(<HistorialView />);
 
     expect(await screen.findByText('Ana')).toBeInTheDocument();
     expect(orders.fetchOrders).toHaveBeenCalledWith({ dateFrom: new Date(2026, 8, 27), dateTo: new Date(2026, 9, 3, 23, 59, 59, 999) });
     expect(kpi('Dinero facturado')).toBe('$ 10.000,00');
     expect(kpi('Pedidos')).toBe('1');
-    // Los rechazados se listan igual, aunque no se facturen.
+    // Los cancelados se listan igual, aunque no se facturen.
     expect(screen.getByText('Beto')).toBeInTheDocument();
   });
 
@@ -123,7 +123,7 @@ describe('HistorialView', () => {
 
 describe('StatsSection', () => {
   beforeEach(() => {
-    stats.fetchStatusDistribution.mockResolvedValue({ Finalizado: 12, Rechazado: 2 });
+    stats.fetchStatusDistribution.mockResolvedValue({ Finalizado: 12, Cancelado: 2 });
     stats.fetchTopProducts.mockResolvedValue([
       { product_name: 'Pizza Muzzarella', total_quantity: 30, total_revenue: 255000 },
       { product_name: 'Coca-Cola 500ml', total_quantity: 18, total_revenue: 45000 },

@@ -1,9 +1,10 @@
 """Estimación de la demora de un pedido a partir del historial real del local.
 
-Modo inteligente (si el local lo tiene activado): si hay suficientes pedidos parecidos ya finalizados (mismo método de entrega y aceptados con la
-misma cantidad de pedidos en cola), la demora es el promedio de su demora real (`Order.actual_minutes`: desde que el
-pedido ingresó hasta que se finalizó). Si no, se aplica la regla de demora fija del método de entrega y, si tampoco hay una, la tiene que indicar el personal al aceptar el pedido. Los pedidos con demora manual o fija también alimentan el historial, así que cuando una
-situación junta datos suficientes el sistema deja de pedir la intervención del empleado.
+Modo inteligente (si el local lo tiene activado): si hay suficientes pedidos parecidos ya finalizados (mismo método de
+entrega e ingresados con la misma cantidad de pedidos en cola), la demora es el promedio de su demora real
+(`Order.actual_minutes`: desde que el pedido ingresó hasta que se finalizó). Si no, se aplica la regla de demora fija
+del método de entrega y, si tampoco hay una, el pedido entra sin demora estimada. Los pedidos con demora manual o fija
+también alimentan el historial.
 """
 
 from dataclasses import dataclass
@@ -26,7 +27,8 @@ MAX_PLAUSIBLE_MINUTES = 240
 class EstimateMode(str, Enum):
     SMART = "smart"
     FIXED = "fixed"
-    MANUAL = "manual"
+    # Sin historial suficiente ni regla fija aplicable: no se informa demora.
+    NONE = "none"
 
 
 @dataclass(frozen=True)
@@ -46,10 +48,10 @@ class DelayEstimate:
 
 
 def estimate_delay(db: Session, delivery_method: DeliveryMethod | str, queue_size: int) -> DelayEstimate:
-    """Demora para un pedido que se acepta ahora, con `queue_size` pedidos en cola.
+    """Demora para un pedido que ingresa ahora, con `queue_size` pedidos en cola.
 
     Prioridad: la inteligente (si está activada y hay historial suficiente), después la regla fija del método de
-    entrega que cubra la cantidad de pedidos en cola y, si no hay ninguna, la indica el personal.
+    entrega que cubra la cantidad de pedidos en cola y, si no hay ninguna, no hay demora para informar.
     """
     method = DeliveryMethod(delivery_method).value
     samples = 0
@@ -64,4 +66,4 @@ def estimate_delay(db: Session, delivery_method: DeliveryMethod | str, queue_siz
     rule = delay_rule_service.rule_for(db, method, queue_size)
     if rule is not None:
         return DelayEstimate(EstimateMode.FIXED, rule.minutes, samples, MIN_SAMPLES_FOR_SMART_ESTIMATE, queue_size)
-    return DelayEstimate(EstimateMode.MANUAL, None, samples, MIN_SAMPLES_FOR_SMART_ESTIMATE, queue_size)
+    return DelayEstimate(EstimateMode.NONE, None, samples, MIN_SAMPLES_FOR_SMART_ESTIMATE, queue_size)

@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.models.order import Order
+from app.services.mercadopago_service import start_chat_payment
 from app.services.store_config_service import get_or_create_store_config
 
 
@@ -13,7 +14,7 @@ def _auto_open_shift(open_shift):
 
 def _create_order(
     db_session,
-    status="Pendiente",
+    status="Confirmado",
     delivery_method="domicilio",
     channel="telegram",
     chat_id="12345",
@@ -41,31 +42,6 @@ def mock_send_message():
         "app.services.order_notification_service.enviar_mensaje", new_callable=AsyncMock
     ) as mock:
         yield mock
-
-
-def test_confirmar_notifica_aceptacion_con_demora(client, db_session, mock_send_message):
-    order = _create_order(db_session)
-
-    response = client.patch(
-        f"/api/v1/orders/{order.id}/status", json={"status": "Confirmado", "estimated_minutes": 30}
-    )
-
-    assert response.status_code == 200
-    mock_send_message.assert_called_once()
-    canal, chat_id, mensaje = mock_send_message.call_args[0]
-    assert (canal, chat_id) == ("telegram", "12345")
-    assert "30" in mensaje
-
-
-def test_rechazar_notifica_rechazo(client, db_session, mock_send_message):
-    order = _create_order(db_session)
-
-    response = client.patch(f"/api/v1/orders/{order.id}/status", json={"status": "Rechazado"})
-
-    assert response.status_code == 200
-    mock_send_message.assert_called_once()
-    *_, mensaje = mock_send_message.call_args[0]
-    assert "rechazado" in mensaje.lower()
 
 
 def test_pasar_a_en_camino_no_avisa_al_cliente(client, db_session, mock_send_message):
@@ -98,7 +74,7 @@ def test_despacho_notifica_segun_metodo_entrega(
 def test_sin_chat_no_notifica(client, db_session, mock_send_message):
     order = _create_order(db_session, channel=None, chat_id=None)
 
-    response = client.patch(f"/api/v1/orders/{order.id}/status", json={"status": "Rechazado"})
+    response = client.patch(f"/api/v1/orders/{order.id}/status", json={"status": "Cancelado"})
 
     assert response.status_code == 200
     mock_send_message.assert_not_called()
@@ -107,7 +83,7 @@ def test_sin_chat_no_notifica(client, db_session, mock_send_message):
 def test_un_pedido_de_whatsapp_se_notifica_por_whatsapp(client, db_session, mock_send_message):
     order = _create_order(db_session, channel="whatsapp", chat_id="5491155551234")
 
-    response = client.patch(f"/api/v1/orders/{order.id}/status", json={"status": "Rechazado"})
+    response = client.patch(f"/api/v1/orders/{order.id}/status", json={"status": "Cancelado"})
 
     assert response.status_code == 200
     canal, chat_id, _ = mock_send_message.call_args[0]
@@ -214,86 +190,65 @@ def test_el_pago_de_la_diferencia_por_mercadopago_se_avisa_al_cliente(client, db
     assert "pago de la diferencia" in mensaje
 
 
-# --- Link de pago al aceptar ---
+# --- Link de pago al registrar el pedido del chat ---
 
 
-def _aceptar(client, order):
-    return client.patch(f"/api/v1/orders/{order.id}/status", json={"status": "Confirmado", "estimated_minutes": 30})
+def _instrucciones(db_session, order):
+    return start_chat_payment(db_session, order, get_or_create_store_config(db_session))
 
 
-def test_aceptar_un_pedido_de_mercadopago_manda_el_link_de_pago(client, db_session, mock_send_message):
+def test_un_pedido_de_mercadopago_del_chat_recibe_el_link_de_pago(db_session):
     order = _create_order(db_session, payment_method="mercadopago")
 
-    assert _aceptar(client, order).status_code == 200
+    mensaje = _instrucciones(db_session, order)
 
-    mensaje = mock_send_message.await_args.args[2]
-    assert "fue aceptado" in mensaje and "30 minutos" in mensaje
     assert "Link de pago de MercadoPago por el total exacto de $1,000.00" in mensaje
     assert "mercadopago.com.ar" in mensaje
     db_session.refresh(order)
     assert order.mp_preference_id == f"mp-pref-{order.id}"
 
 
-def test_el_link_al_aceptar_incluye_el_alias_de_cobro(client, db_session, mock_send_message):
+def test_el_link_incluye_el_alias_de_cobro(db_session):
     get_or_create_store_config(db_session).mp_alias = "mipizzeria.mp"
     db_session.commit()
     order = _create_order(db_session, payment_method="mercadopago")
 
-    _aceptar(client, order)
-
-    assert "Alias de cobro: mipizzeria.mp" in mock_send_message.await_args.args[2]
+    assert "Alias de cobro: mipizzeria.mp" in _instrucciones(db_session, order)
 
 
-def test_con_pago_parcial_el_link_al_aceptar_es_por_la_diferencia(client, db_session, mock_send_message):
+def test_con_pago_parcial_el_link_es_por_la_diferencia(db_session):
     order = _create_order(db_session, payment_method="mercadopago")
     order.paid_amount = 600
     order.balance_payment_method = "mercadopago"
     db_session.commit()
 
-    _aceptar(client, order)
-
-    assert "por la diferencia de $400.00" in mock_send_message.await_args.args[2]
+    assert "por la diferencia de $400.00" in _instrucciones(db_session, order)
     db_session.refresh(order)
     assert order.mp_preference_id == f"mp-pref-{order.id}-extra"
 
 
 @pytest.mark.parametrize("payment_method", ["efectivo", None])
-def test_aceptar_sin_mercadopago_no_manda_link(client, db_session, mock_send_message, payment_method):
+def test_sin_mercadopago_no_hay_link(db_session, payment_method):
     order = _create_order(db_session, payment_method=payment_method)
 
-    _aceptar(client, order)
-
-    assert "Link de pago" not in mock_send_message.await_args.args[2]
+    assert _instrucciones(db_session, order) is None
     db_session.refresh(order)
     assert order.mp_preference_id is None
 
 
-def test_aceptar_un_pedido_ya_abonado_no_manda_link(client, db_session, mock_send_message):
+def test_un_pedido_ya_abonado_no_recibe_link(db_session):
     order = _create_order(db_session, payment_method="mercadopago")
     order.is_paid = True
     db_session.commit()
 
-    _aceptar(client, order)
-
-    assert "Link de pago" not in mock_send_message.await_args.args[2]
+    assert _instrucciones(db_session, order) is None
 
 
-def test_aceptar_un_pedido_de_la_web_no_genera_otro_cobro(client, db_session, mock_send_message):
+def test_un_pedido_sin_chat_no_genera_otro_cobro(db_session):
     order = _create_order(db_session, channel=None, chat_id=None, payment_method="mercadopago")
     order.mp_preference_id = "pref-de-la-web"
     db_session.commit()
 
-    _aceptar(client, order)
-
+    assert _instrucciones(db_session, order) is None
     db_session.refresh(order)
     assert order.mp_preference_id == "pref-de-la-web"
-
-
-def test_rechazar_un_pedido_de_mercadopago_no_genera_cobro(client, db_session, mock_send_message):
-    order = _create_order(db_session, payment_method="mercadopago")
-
-    client.patch(f"/api/v1/orders/{order.id}/status", json={"status": "Rechazado"})
-
-    assert "Link de pago" not in mock_send_message.await_args.args[2]
-    db_session.refresh(order)
-    assert order.mp_preference_id is None

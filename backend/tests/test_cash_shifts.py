@@ -269,9 +269,9 @@ def test_inmutabilidad_del_turno_cerrado(client, db_session, products):
     with pytest.raises(BusinessRuleError, match="turno de caja.*cerrado"):
         order_service.update_order_payment(db_session, order.id, is_paid=True)
 
-    # 3. No se puede cancelar ni rechazar (sacaría el pedido de las ventas del turno sellado)
+    # 3. No se puede cancelar (sacaría el pedido de las ventas del turno sellado)
     with pytest.raises(BusinessRuleError, match="turno de caja.*cerrado"):
-        order.transition_to("Cancelado", None, 30)
+        order.transition_to("Cancelado")
 
     # 4. No se pueden borrar movimientos de un turno cerrado
     del_mov = client.delete(f"{CASH_SHIFTS_URL}/movements/{mov_id}")

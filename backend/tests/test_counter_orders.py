@@ -42,7 +42,9 @@ def test_registra_pedido_presencial_confirmado_con_demora(client, db_session, pr
     order = db_session.query(Order).one()
     assert order.source == "mostrador"
     assert order.status == "Confirmado"
-    assert order.estimated_minutes is not None and order.estimated_minutes >= 15
+    # Sin demora configurada (ni historial ni regla fija) no se informa ninguna.
+    assert order.estimated_minutes is None
+    assert order.needs_attention is False
     assert order.customer_phone == "1144445555"
     assert order.notes == "Sin cebolla"
     assert len(order.items) == 2
