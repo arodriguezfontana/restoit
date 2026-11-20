@@ -25,6 +25,7 @@ import { PinModal } from '@/components/PinModal';
 import { PinSecurityProvider } from '@/context/PinSecurityContext';
 import { usePinSecurity } from '@/hooks/usePinSecurity';
 import { useStoreConfig } from '@/hooks/useStoreConfig';
+import { applyStoreBranding } from '@/utils/branding';
 import { applyThemeColor } from '@/utils/theme';
 import type { PinType } from '@/types/security';
 import { panelBackground } from '@/utils/panelBackground';
@@ -201,6 +202,7 @@ function AdminDashboardContent() {
                 onConfigUpdated={(updated) => {
                   setStoreConfig(updated);
                   applyThemeColor(updated.theme_color);
+                  applyStoreBranding(updated);
                 }}
               />
             </div>
