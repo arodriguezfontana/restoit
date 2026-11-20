@@ -471,11 +471,11 @@ def test_resumen_desglosa_medios_y_transferencia_sin_confirmar_aparece_como_pend
     client, db_session, open_shift
 ):
     # Pedido en efectivo ya abonado
-    o_cash = _pedido_listo(db_session, open_shift, payment_method="efectivo", total=3000.0, is_paid=True)
+    _pedido_listo(db_session, open_shift, payment_method="efectivo", total=3000.0, is_paid=True)
     # Pedido en MercadoPago abonado
-    o_mp = _pedido_listo(db_session, open_shift, payment_method="mercadopago", total=4000.0, is_paid=True)
+    _pedido_listo(db_session, open_shift, payment_method="mercadopago", total=4000.0, is_paid=True)
     # Pedido en Tarjeta abonado
-    o_card = _pedido_listo(db_session, open_shift, payment_method="tarjeta", total=2500.0, is_paid=True)
+    _pedido_listo(db_session, open_shift, payment_method="tarjeta", total=2500.0, is_paid=True)
     # Transferencia sin confirmar (no abonada)
     o_transf = _pedido_listo(db_session, open_shift, payment_method="transferencia", total=3500.0, is_paid=False)
 
