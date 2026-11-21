@@ -21,11 +21,12 @@ from app.models.menu import (
 from app.models.order import (
     MAX_QUANTITY_PER_ITEM,
     PICKUP_ADDRESS,
+    EstimateNotAllowedError,
+    EstimateSource,
     InvalidOrderError,
     InvalidTransitionError,
     Order,
     OrderStatus,
-    ScheduledOrderEstimateError,
 )
 
 
@@ -81,10 +82,9 @@ def test_un_retiro_usa_la_direccion_del_local_y_un_envio_exige_direccion():
         order.set_delivery("domicilio", "   ")
 
 
-def test_los_rechazados_y_cancelados_no_cuentan_como_venta():
+def test_los_cancelados_no_cuentan_como_venta():
     assert Order(status=OrderStatus.CONFIRMED.value).is_billable
     assert Order(status=OrderStatus.COMPLETED.value).is_billable
-    assert not Order(status=OrderStatus.REJECTED.value).is_billable
     assert not Order(status=OrderStatus.CANCELLED.value).is_billable
 
 
@@ -93,40 +93,43 @@ def test_los_rechazados_y_cancelados_no_cuentan_como_venta():
 
 @pytest.mark.parametrize(
     "actual,nuevo",
-    [("Pendiente", "Finalizado"), ("Confirmado", "Pendiente"), ("Finalizado", "Rechazado"), ("Rechazado", "Confirmado")],
+    [("Confirmado", "Finalizado"), ("Finalizado", "En Camino"), ("Cancelado", "Confirmado"), ("En Camino", "Confirmado")],
 )
 def test_no_permite_transiciones_fuera_del_ciclo_de_vida(actual, nuevo):
     order = Order(status=actual)
 
     with pytest.raises(InvalidTransitionError, match=f"No se puede pasar de '{actual}' a '{nuevo}'"):
-        order.transition_to(nuevo, estimated_minutes=None, current_delay_minutes=15)
+        order.transition_to(nuevo)
     assert order.status == actual
 
 
-def test_al_confirmar_sin_demora_usa_la_demora_actual_del_local():
-    order = Order(status="Pendiente")
+def test_la_demora_se_carga_a_mano_y_queda_como_manual():
+    order = Order(status="Confirmado")
 
-    order.transition_to(OrderStatus.CONFIRMED, estimated_minutes=None, current_delay_minutes=21)
+    order.set_estimated_minutes(40)
 
-    assert (order.status, order.estimated_minutes) == ("Confirmado", 21)
+    assert (order.estimated_minutes, order.estimate_source) == (40, "manual")
 
 
-def test_al_confirmar_respeta_la_demora_indicada():
-    order = Order(status="Pendiente")
+def test_la_demora_puede_venir_de_una_regla_fija():
+    order = Order(status="Confirmado")
 
-    order.transition_to("Confirmado", estimated_minutes=40, current_delay_minutes=21)
+    order.set_estimated_minutes(30, EstimateSource.FIXED)
 
-    assert order.estimated_minutes == 40
+    assert (order.estimated_minutes, order.estimate_source) == (30, "fixed")
 
 
 def test_los_programados_no_llevan_demora():
-    order = Order(status="Pendiente", scheduled_for=datetime(2026, 10, 14, 21, tzinfo=timezone.utc))
+    order = Order(status="Confirmado", scheduled_for=datetime(2026, 10, 14, 21, tzinfo=timezone.utc))
 
-    with pytest.raises(ScheduledOrderEstimateError):
-        order.transition_to("Confirmado", estimated_minutes=30, current_delay_minutes=15)
+    with pytest.raises(EstimateNotAllowedError):
+        order.set_estimated_minutes(30)
 
-    order.transition_to("Confirmado", estimated_minutes=None, current_delay_minutes=15)
-    assert (order.status, order.estimated_minutes) == ("Confirmado", None)
+
+def test_no_se_modifica_la_demora_de_un_pedido_terminado():
+    for status in ("Finalizado", "Cancelado"):
+        with pytest.raises(EstimateNotAllowedError):
+            Order(status=status).set_estimated_minutes(30)
 
 
 # --- Catálogo -----------------------------------------------------------------------------------------

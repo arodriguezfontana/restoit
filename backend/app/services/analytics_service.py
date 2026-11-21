@@ -331,10 +331,10 @@ def _average_ticket(revenue: float, completed_orders: int, billable_orders: int)
 
 
 def _cancellation_rate(status_distribution: dict[str, int]) -> float:
-    """Porcentaje de pedidos rechazados o cancelados sobre el total ingresado."""
+    """Porcentaje de pedidos cancelados sobre el total ingresado."""
     total_orders = sum(status_distribution.values())
-    rejected_and_cancelled = status_distribution.get("Rechazado", 0) + status_distribution.get("Cancelado", 0)
-    return rejected_and_cancelled / total_orders * 100.0 if total_orders > 0 else 0.0
+    cancelled = status_distribution.get("Cancelado", 0)
+    return cancelled / total_orders * 100.0 if total_orders > 0 else 0.0
 
 
 def _with_goal_progress(goal: GoalProgress | None, revenue: float, orders: int) -> GoalProgress | None:

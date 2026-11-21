@@ -4,17 +4,15 @@ import type { OrderDetail } from '@/types/order';
 import { getErrorMessage } from '@/utils/errors';
 
 /**
- * Carga el detalle completo de un pedido (sus productos y su pago). En el modo simulación los pedidos no existen
- * en el servidor, así que no se pide nada.
+ * Carga el detalle completo de un pedido (sus productos y su pago).
  */
-export function useOrderDetail(orderId: number, simulated: boolean) {
+export function useOrderDetail(orderId: number) {
   const [detail, setDetail] = useState<OrderDetail | null>(null);
-  const [loading, setLoading] = useState(!simulated);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
-    if (simulated) return;
     const controller = new AbortController();
 
     fetchOrderDetail(orderId, controller.signal)
@@ -29,7 +27,7 @@ export function useOrderDetail(orderId: number, simulated: boolean) {
       });
 
     return () => controller.abort();
-  }, [orderId, simulated, reloadKey]);
+  }, [orderId, reloadKey]);
 
   const retry = useCallback(() => {
     setLoading(true);

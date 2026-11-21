@@ -62,13 +62,12 @@ def test_actualizar_metas_comerciales(client):
     assert by_type["monthly"]["target_orders"] == 400
 
 
-def test_kpis_ticket_promedio_y_tasa_rechazo(client, db_session):
+def test_kpis_ticket_promedio_y_tasa_cancelacion(client, db_session):
     # 2 pedidos finalizados por $10.000 cada uno ($20.000 total)
     _order(db_session, status="Finalizado", total=10000, created_at=LUNES_MEDIODIA)
     _order(db_session, status="Finalizado", total=10000, created_at=LUNES_MEDIODIA)
-    # 1 pedido rechazado
-    _order(db_session, status="Rechazado", total=5000, created_at=LUNES_MEDIODIA)
-    # 1 pedido cancelado
+    # 2 pedidos cancelados
+    _order(db_session, status="Cancelado", total=5000, created_at=LUNES_MEDIODIA)
     _order(db_session, status="Cancelado", total=3000, created_at=LUNES_MEDIODIA)
 
     resp = client.get(
@@ -84,7 +83,7 @@ def test_kpis_ticket_promedio_y_tasa_rechazo(client, db_session):
     assert data["completed_orders_count"] == 2
     assert data["average_ticket"]["current"] == 10000.0
 
-    # Total pedidos ingresados: 4. Rechazados + Cancelados: 2 -> Tasa: 50%
+    # Total pedidos ingresados: 4. Cancelados: 2 -> Tasa: 50%
     assert data["cancellation_rate"]["current"] == 50.0
 
 
@@ -187,7 +186,7 @@ def test_asistente_insight_tiempos_espera_y_flujos_operativos(client, db_session
     order1.estimated_minutes = 55
     order1.delivery_method = "domicilio"
 
-    order2 = _order(db_session, status="Rechazado", total=8000, created_at=hora_pico)
+    order2 = _order(db_session, status="Cancelado", total=8000, created_at=hora_pico)
     order2.estimated_minutes = 45
     order2.delivery_method = "domicilio"
 

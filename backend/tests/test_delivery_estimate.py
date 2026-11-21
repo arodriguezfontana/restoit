@@ -15,7 +15,7 @@ from app.services.order_service import OrderRequest
 
 
 def _create_order(
-    db_session, status="Pendiente", delivery_method="domicilio", scheduled_for=None, created_at=None, actual_minutes=None
+    db_session, status="Confirmado", delivery_method="domicilio", scheduled_for=None, created_at=None, actual_minutes=None
 ):
     order = Order(
         customer_name="Juan Perez",
@@ -63,21 +63,27 @@ def test_cada_cambio_de_estado_queda_registrado_con_la_cola_del_momento(client, 
     _create_order(db_session, status="Confirmado")
     order = _create_order(db_session)
 
-    client.patch(f"/api/v1/orders/{order.id}/status", json={"status": "Confirmado", "estimated_minutes": 20})
     client.patch(f"/api/v1/orders/{order.id}/status", json={"status": "En Camino"})
     client.patch(f"/api/v1/orders/{order.id}/status", json={"status": "Finalizado"})
 
-    # La cola es la de los otros pedidos aceptados (sin contarlo a él): eran 2 en todo el recorrido.
-    assert _eventos(db_session, order.id) == [("Pendiente", 2), ("Confirmado", 2), ("En Camino", 2), ("Finalizado", 2)]
+    # La cola es la de los otros pedidos en preparación (sin contarlo a él): eran 2 en todo el recorrido.
+    assert _eventos(db_session, order.id) == [("Confirmado", 2), ("En Camino", 2), ("Finalizado", 2)]
+
+
+def test_los_pedidos_programados_no_cuentan_en_la_cola(db_session):
+    _create_order(db_session, status="Confirmado", scheduled_for=datetime.now(timezone.utc) + timedelta(hours=3))
+    order = _create_order(db_session)
+
+    assert _eventos(db_session, order.id) == [("Confirmado", 0)]
 
 
 def test_los_eventos_guardan_el_momento_exacto(client, db_session):
     order = _create_order(db_session)
     antes = datetime.now(timezone.utc) - timedelta(seconds=5)
 
-    client.patch(f"/api/v1/orders/{order.id}/status", json={"status": "Rechazado"})
+    client.patch(f"/api/v1/orders/{order.id}/status", json={"status": "Cancelado"})
 
-    evento = db_session.query(OrderStatusEvent).filter_by(order_id=order.id, status="Rechazado").one()
+    evento = db_session.query(OrderStatusEvent).filter_by(order_id=order.id, status="Cancelado").one()
     ocurrido = evento.occurred_at if evento.occurred_at.tzinfo else evento.occurred_at.replace(tzinfo=timezone.utc)
     assert antes <= ocurrido <= datetime.now(timezone.utc) + timedelta(seconds=5)
 
@@ -86,14 +92,14 @@ def test_al_finalizar_se_guarda_la_demora_real_desde_que_ingreso(client, db_sess
     ingreso = datetime.now(timezone.utc) - timedelta(minutes=50)
     order = _create_order(db_session, created_at=ingreso)
 
-    client.patch(f"/api/v1/orders/{order.id}/status", json={"status": "Confirmado", "estimated_minutes": 20})
+    client.patch(f"/api/v1/orders/{order.id}/delay", json={"estimated_minutes": 20})
     db_session.refresh(order)
     assert order.actual_minutes is None
 
     client.patch(f"/api/v1/orders/{order.id}/status", json={"status": "En Camino"})
     respuesta = client.patch(f"/api/v1/orders/{order.id}/status", json={"status": "Finalizado"})
 
-    # Cuenta desde que el pedido ingresó (no desde que se confirmó) y no tiene que ver con los 20 minutos estimados.
+    # Cuenta desde que el pedido ingresó y no tiene que ver con los 20 minutos estimados.
     assert respuesta.json()["actual_minutes"] == 50
     db_session.refresh(order)
     assert order.actual_minutes == 50
@@ -104,8 +110,7 @@ def test_un_pedido_para_retirar_tambien_guarda_su_demora_real_al_finalizar(clien
         db_session, delivery_method="retiro", created_at=datetime.now(timezone.utc) - timedelta(minutes=25)
     )
 
-    for paso in ({"status": "Confirmado", "estimated_minutes": 10}, {"status": "Listo para Retirar"}):
-        client.patch(f"/api/v1/orders/{order.id}/status", json=paso)
+    client.patch(f"/api/v1/orders/{order.id}/status", json={"status": "Listo para Retirar"})
     db_session.refresh(order)
     assert order.actual_minutes is None
 
@@ -117,7 +122,7 @@ def test_un_pedido_para_retirar_tambien_guarda_su_demora_real_al_finalizar(clien
 def test_un_pedido_cancelado_no_tiene_demora_real(client, db_session):
     order = _create_order(db_session)
 
-    client.patch(f"/api/v1/orders/{order.id}/status", json={"status": "Rechazado"})
+    client.patch(f"/api/v1/orders/{order.id}/status", json={"status": "Cancelado"})
     db_session.refresh(order)
 
     assert order.actual_minutes is None
@@ -131,35 +136,25 @@ def test_un_cambio_que_no_es_de_estado_no_registra_evento(client, db_session):
     assert _eventos(db_session, order.id) == [("Confirmado", 0)]
 
 
-# --- Modo inteligente / manual ---
+# --- Modo inteligente ---
 
 
-def test_sin_historial_suficiente_el_empleado_tiene_que_indicar_la_demora(client, db_session):
+def test_sin_historial_suficiente_no_hay_demora_automatica(db_session):
     _historial(db_session, MIN_SAMPLES_FOR_SMART_ESTIMATE - 1, 40)
-    order = _create_order(db_session)
 
-    estimate = client.get(f"/api/v1/orders/{order.id}/estimate").json()
-    assert estimate["mode"] == "manual"
-    assert estimate["estimated_minutes"] is None
-    assert (estimate["samples"], estimate["min_samples"]) == (MIN_SAMPLES_FOR_SMART_ESTIMATE - 1, 30)
-    assert estimate["suggested_minutes"] == 15
+    estimate = estimate_delay(db_session, "domicilio", queue_size=0)
 
-    rechazo = client.patch(f"/api/v1/orders/{order.id}/status", json={"status": "Confirmado"})
-    assert rechazo.status_code == 400
+    assert estimate.mode.value == "none"
+    assert estimate.minutes is None
+    assert (estimate.samples, estimate.min_samples) == (MIN_SAMPLES_FOR_SMART_ESTIMATE - 1, 30)
 
 
-def test_con_historial_suficiente_la_demora_se_calcula_sola(client, db_session):
+def test_con_historial_suficiente_la_demora_se_calcula_sola(db_session):
     _historial(db_session, MIN_SAMPLES_FOR_SMART_ESTIMATE, 40)
-    order = _create_order(db_session)
 
-    estimate = client.get(f"/api/v1/orders/{order.id}/estimate").json()
-    assert (estimate["mode"], estimate["estimated_minutes"], estimate["samples"]) == ("smart", 40, 30)
+    estimate = estimate_delay(db_session, "domicilio", queue_size=0)
 
-    respuesta = client.patch(f"/api/v1/orders/{order.id}/status", json={"status": "Confirmado"})
-
-    assert respuesta.status_code == 200
-    assert respuesta.json()["estimated_minutes"] == 40
-    assert respuesta.json()["estimate_source"] == "smart"
+    assert (estimate.mode.value, estimate.minutes, estimate.samples) == ("smart", 40, 30)
 
 
 def test_promedia_los_tiempos_del_historial(db_session):
@@ -171,7 +166,7 @@ def test_promedia_los_tiempos_del_historial(db_session):
     assert (estimate.is_smart, estimate.minutes) == (True, 40)
 
 
-def test_solo_cuentan_los_pedidos_aceptados_con_la_misma_carga(db_session):
+def test_solo_cuentan_los_pedidos_ingresados_con_la_misma_carga(db_session):
     _historial(db_session, 20, 40, queue_size=0)
     _historial(db_session, 20, 40, queue_size=3)
 
@@ -240,48 +235,43 @@ def test_los_pedidos_programados_no_cuentan_ni_se_estiman(client, db_session):
     assert not estimate_delay(db_session, "domicilio", queue_size=0).is_smart
 
     nuevo = _create_order(db_session, scheduled_for=programado)
-    respuesta = client.patch(f"/api/v1/orders/{nuevo.id}/status", json={"status": "Confirmado"})
-    assert respuesta.status_code == 200
-    assert respuesta.json()["estimated_minutes"] is None
+    assert nuevo.estimated_minutes is None
 
 
 def test_una_demora_manual_se_guarda_como_manual(client, db_session):
     order = _create_order(db_session)
 
-    respuesta = client.patch(f"/api/v1/orders/{order.id}/status", json={"status": "Confirmado", "estimated_minutes": 45})
+    respuesta = client.patch(f"/api/v1/orders/{order.id}/delay", json={"estimated_minutes": 45})
 
     assert (respuesta.json()["estimated_minutes"], respuesta.json()["estimate_source"]) == (45, "manual")
 
 
-# --- Transición automática ---
+# --- Historial con demoras manuales ---
 
 
 def test_los_pedidos_con_demora_manual_alimentan_el_historial_con_su_demora_real(client, db_session):
     def atender():
         # Se le puso una demora manual de 25 minutos, pero entre que ingresó y se finalizó pasaron 30.
         order = _create_order(db_session, created_at=datetime.now(timezone.utc) - timedelta(minutes=30))
-        pasos = [{"status": "Confirmado", "estimated_minutes": 25}, {"status": "En Camino"}, {"status": "Finalizado"}]
-        for paso in pasos:
+        assert client.patch(f"/api/v1/orders/{order.id}/delay", json={"estimated_minutes": 25}).status_code == 200
+        for paso in ({"status": "En Camino"}, {"status": "Finalizado"}):
             assert client.patch(f"/api/v1/orders/{order.id}/status", json=paso).status_code == 200
 
-    nuevo = _create_order(db_session)
-    assert client.get(f"/api/v1/orders/{nuevo.id}/estimate").json()["mode"] == "manual"
+    assert estimate_delay(db_session, "domicilio", queue_size=0).minutes is None
 
     for _ in range(MIN_SAMPLES_FOR_SMART_ESTIMATE):
         atender()
 
-    estimate = client.get(f"/api/v1/orders/{nuevo.id}/estimate").json()
+    estimate = estimate_delay(db_session, "domicilio", queue_size=0)
     # Pasa a automática con la demora real (30), no con la manual que se había cargado (25).
-    assert (estimate["mode"], estimate["estimated_minutes"]) == ("smart", 30)
-    respuesta = client.patch(f"/api/v1/orders/{nuevo.id}/status", json={"status": "Confirmado"})
-    assert (respuesta.json()["estimated_minutes"], respuesta.json()["estimate_source"]) == (30, "smart")
+    assert (estimate.mode.value, estimate.minutes) == ("smart", 30)
 
 
-# --- Pedidos que entran ya aceptados (web y mostrador) ---
+# --- Pedidos que entran (web y mostrador) ---
 
 
-@pytest.mark.parametrize("cantidad,fuente,minutos", [(0, "default", 15), (30, "smart", 33)])
-def test_los_pedidos_que_entran_aceptados_usan_el_historial_o_la_demora_estandar(
+@pytest.mark.parametrize("cantidad,fuente,minutos", [(0, None, None), (30, "smart", 33)])
+def test_los_pedidos_que_entran_usan_el_historial_o_no_informan_demora(
     db_session, products, monkeypatch, cantidad, fuente, minutos
 ):
     _historial(db_session, cantidad, 33)

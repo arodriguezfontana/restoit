@@ -268,26 +268,23 @@ def test_reimprimir_pedido_inexistente_da_404(client):
     assert client.post("/api/v1/orders/9999/print").status_code == 404
 
 
-def test_aceptar_pedido_pendiente_imprime_la_comanda(client, db_session, products, fake_printer):
+def test_cambiar_de_estado_no_vuelve_a_imprimir_la_comanda(client, db_session, products, fake_printer):
     _configure(client, ("cocina", fake_printer.port))
     order = Order(
         customer_name="Juan",
         shipping_address="Retiro en el local",
         total_amount=8500.0,
-        status="Pendiente",
+        status="Confirmado",
         delivery_method="retiro",
     )
     order.set_items([(products["muzza"], 1, None, None, [], None)])
     db_session.add(order)
     db_session.commit()
-    assert not fake_printer.received
 
-    response = client.patch(f"/api/v1/orders/{order.id}/status", json={"status": "Confirmado", "estimated_minutes": 30})
+    response = client.patch(f"/api/v1/orders/{order.id}/status", json={"status": "Listo para Retirar"})
 
     assert response.status_code == 200, response.text
-    assert response.json()["print_error"] is None
-    _wait_for(fake_printer)
-    assert len(fake_printer.received) == 1
+    assert not fake_printer.received
 
 
 def test_pedido_web_imprime_la_comanda_sin_bloquear(client, products, fake_printer):

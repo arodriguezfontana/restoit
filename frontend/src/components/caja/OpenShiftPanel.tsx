@@ -34,7 +34,9 @@ export function OpenShiftPanel({ form, onInvalid, onOpen }: OpenShiftPanelProps)
       <div
         className="rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 border"
         style={{
-          backgroundColor: 'var(--primary-light, #f4f4f5)',
+          // Base blanca opaca con el tinte encima: así se lee igual sobre cualquier fondo de color o imagen.
+          backgroundColor: '#ffffff',
+          backgroundImage: 'linear-gradient(var(--primary-light, #f4f4f5), var(--primary-light, #f4f4f5))',
           borderColor: 'var(--primary-border, #e4e4e7)',
           color: 'var(--primary-text, #18181b)',
         }}

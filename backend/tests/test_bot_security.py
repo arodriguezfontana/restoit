@@ -156,7 +156,7 @@ def test_confirmar_y_guardar_pedido_trunca_campos_y_persiste_correctamente(db_se
     }
 
     mensaje = _confirmar(datos)
-    assert "confirmado" in mensaje.lower()
+    assert "recibimos tu pedido" in mensaje.lower()
 
     orden = db_session.query(Order).order_by(Order.id.desc()).first()
     assert orden is not None

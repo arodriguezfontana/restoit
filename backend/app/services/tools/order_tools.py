@@ -35,6 +35,7 @@ from app.models.order import (
 from app.models.promotion import Promotion
 from app.repositories import promotion_repository
 from app.schemas.common import PHONE_PATTERN
+from app.services import printer_service
 from app.services.business_hours_service import (
     DIAS_SEMANA,
     Franja,
@@ -46,6 +47,7 @@ from app.services.business_hours_service import (
     proxima_fecha_abierta_a_la_hora,
 )
 from app.services.catalog_service import find_available_products_by_name
+from app.services.mercadopago_service import start_chat_payment
 from app.services.modifier_nlp import (
     extraer_modificadores_de_texto,
     filtrar_modificadores_para_producto,
@@ -53,6 +55,7 @@ from app.services.modifier_nlp import (
 )
 from app.services.order_service import OrderRequest, ScheduleTooEarlyError, create_bot_order, validate_schedule
 from app.services.payment_methods_service import PAYMENT_LABELS, accepted_payment_methods, transfer_instructions
+from app.services.store_config_service import get_or_create_store_config
 
 logger = logging.getLogger(__name__)
 
@@ -1069,10 +1072,11 @@ def _telefono_confirmado(datos: dict, canal: Channel | None, chat_id: str | None
     return str(datos.get("telefono") or datos.get("customer_phone") or "").strip()[:MAX_LARGO_TELEFONO]
 
 
-def _detalle_de_pago(db: Session, metodo_pago: str, total: Decimal) -> str:
+def _detalle_de_pago(db: Session, metodo_pago: str, total: Decimal, link_enviado: bool = True) -> str:
     if metodo_pago == PaymentMethod.MERCADOPAGO.value:
-        # El link de MercadoPago se manda recién cuando el local acepta el pedido (ver start_chat_payment).
-        return "MercadoPago (te pasamos el link de pago cuando el local acepte tu pedido)"
+        if link_enviado:
+            return "MercadoPago (abajo te dejo el link de pago)"
+        return "MercadoPago (el local te va a enviar el link de pago por este chat)"
     if metodo_pago == PaymentMethod.TRANSFER.value:
         return (
             f"Transferencia. Transferí ${total:,.2f} a {transfer_instructions(db)} y mandame por este chat una "
@@ -1083,15 +1087,39 @@ def _detalle_de_pago(db: Session, metodo_pago: str, total: Decimal) -> str:
     return "Efectivo (abonás al recibir o retirar tu pedido)"
 
 
-def _mensaje_pedido_registrado(cliente: str, programado: datetime | None, detalle_pago: str) -> str:
+def _mensaje_pedido_registrado(
+    cliente: str,
+    programado: datetime | None,
+    detalle_pago: str,
+    demora_minutos: int | None = None,
+    instrucciones_pago: str | None = None,
+) -> str:
+    """Mensaje al cliente con el pedido ya tomado por el local: la demora se informa solo si hay una."""
     horario = f" {describir_horario_programado(programado, ahora_local())}" if programado else ""
-    return (
-        f"¡Listo, {cliente}! 🙌 {MARCA_PEDIDO_REGISTRADO}{horario}.\n\n"
-        f"Método de pago: {detalle_pago}.\n\n"
-        "⏳ Todavía no está confirmado: el local lo va a revisar y en breve te vamos a escribir "
-        "por este chat para confirmártelo junto con el tiempo estimado.\n\n"
-        "¡Muchas gracias por elegirnos!"
-    )
+    partes = [f"¡Listo, {cliente}! 🙌 {MARCA_PEDIDO_REGISTRADO}{horario}."]
+    if demora_minutos is not None and programado is None:
+        partes.append(f"Tiempo estimado de entrega: {demora_minutos} minutos aproximadamente.")
+    partes.append(f"Método de pago: {detalle_pago}.")
+    if instrucciones_pago:
+        partes.append(instrucciones_pago)
+    partes.append("Ya lo estamos preparando. ¡Muchas gracias por elegirnos!")
+    return "\n\n".join(partes)
+
+
+def _imprimir_comanda(db: Session, pedido) -> None:
+    """La comanda sale a cocina apenas entra el pedido. Si la impresora falla el pedido queda registrado igual."""
+    resultado = printer_service.print_order(db, pedido)
+    if not resultado.success:
+        logger.warning("No se pudo imprimir la comanda del pedido #%s: %s", pedido.id, resultado.message)
+
+
+def _instrucciones_de_pago(db: Session, pedido) -> str | None:
+    """Link de MercadoPago del pedido (solo si se paga por ahí). Si no se pudo generar, el local lo envía a mano."""
+    try:
+        return start_chat_payment(db, pedido, get_or_create_store_config(db))
+    except Exception:
+        logger.exception("No se pudo generar el link de pago del pedido #%s.", pedido.id)
+        return None
 
 
 def _registrar_pedido_confirmado(db: Session, datos: dict, canal: Channel | None, chat_id: str | None) -> str:
@@ -1140,7 +1168,10 @@ def _registrar_pedido_confirmado(db: Session, datos: dict, canal: Channel | None
         )
     except InvalidOrderError as exc:
         return f"El pedido NO se registró todavía. {exc}"
-    return _mensaje_pedido_registrado(cliente, programado, _detalle_de_pago(db, metodo_pago, guardado.total_amount))
+    _imprimir_comanda(db, guardado)
+    instrucciones = _instrucciones_de_pago(db, guardado) if metodo_pago == PaymentMethod.MERCADOPAGO.value else None
+    detalle = _detalle_de_pago(db, metodo_pago, guardado.total_amount, link_enviado=instrucciones is not None)
+    return _mensaje_pedido_registrado(cliente, programado, detalle, guardado.estimated_minutes, instrucciones)
 
 
 @tool
@@ -1149,7 +1180,7 @@ def confirmar_y_guardar_pedido(
     canal: Annotated[Channel | None, InjectedToolArg] = None,
     chat_id: Annotated[str | None, InjectedToolArg] = None,
 ) -> str:
-    """Persiste definitivamente la orden en la base de datos con estado 'Pendiente'.
+    """Persiste definitivamente la orden en la base de datos: el local la toma directamente (sin aceptarla ni rechazarla).
     Se ejecuta únicamente cuando el usuario confirma explícitamente con un 'Sí'.
 
     Args:

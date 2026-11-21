@@ -46,7 +46,7 @@ def _pedido(db_session, channel="whatsapp", chat_id="5491155551234") -> Order:
         customer_name="Ana",
         shipping_address="Calle 1",
         total_amount=1000.0,
-        status="Pendiente",
+        status="Confirmado",
         delivery_method="domicilio",
         source="bot",
         channel=channel,

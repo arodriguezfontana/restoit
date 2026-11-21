@@ -211,7 +211,7 @@ def test_consumo_de_los_pedidos_finalizados(client, db_session, products, recipe
     muzza, coca = products["muzza"], products["coca"]
     _order(db_session, [(muzza, 2), (coca, 1)])
     _order(db_session, [(muzza, 1)])
-    for status in ("Pendiente", "Confirmado", "En Camino", "Listo para Retirar", "Rechazado"):
+    for status in ("Confirmado", "En Camino", "Listo para Retirar", "Cancelado"):
         _order(db_session, [(muzza, 10)], status=status)
 
     body = client.get(CONSUMPTION_URL).json()

@@ -53,7 +53,7 @@ def test_pedidos_sin_datos_de_pago_quedan_sin_informar_e_impagos(client, db_sess
         shipping_address="Retiro en el local",
         delivery_method="retiro",
         total_amount=8500.0,
-        status="Pendiente",
+        status="Confirmado",
         source="bot",
     )
     order.items = [OrderItem(product_id=products["muzza"].id, quantity=1, unit_price=8500.0)]

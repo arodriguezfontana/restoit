@@ -43,7 +43,7 @@ export function makeOrder(overrides: Partial<AdminOrder> = {}): AdminOrder {
     customer_name: 'Paula Gómez',
     shipping_address: 'Belgrano 95',
     total_amount: 17000,
-    status: 'Pendiente',
+    status: 'Confirmado',
     delivery_method: 'domicilio',
     source: 'web',
     customer_phone: '11 4444-5555',

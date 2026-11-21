@@ -226,7 +226,7 @@ describe('AdminDashboardPage', () => {
     renderDashboard();
 
     expect(screen.getByText('Panel de Comandas')).toBeVisible();
-    expect(await screen.findAllByText('Sin pedidos')).toHaveLength(4);
+    expect(await screen.findAllByText('Sin pedidos')).toHaveLength(3);
   });
 
   it('el menú lateral agrupa las secciones por tarea', async () => {

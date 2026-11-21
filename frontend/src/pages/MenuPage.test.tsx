@@ -51,7 +51,7 @@ function orderCreated(overrides: Partial<WebOrderCreated> = {}): WebOrderCreated
   return {
     id: 321,
     shift_number: 321,
-    status: 'Pendiente',
+    status: 'Confirmado',
     customer_name: 'Ana Gómez',
     customer_phone: '11 5555-1234',
     delivery_method: 'retiro',

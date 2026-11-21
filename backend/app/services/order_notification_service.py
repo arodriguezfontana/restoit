@@ -2,9 +2,8 @@
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 
-from app.core.time import RESTAURANT_TZ
 from app.models.order import DeliveryMethod, Order, OrderStatus
 from app.services import delivery_review_service
 from app.services.channels import enviar_mensaje
@@ -48,21 +47,6 @@ class OrderSnapshot:
         )
 
 
-def _horario_programado(programado: datetime) -> str:
-    if programado.tzinfo is None:  # la base lo guarda en UTC
-        programado = programado.replace(tzinfo=timezone.utc)
-    return f"{programado.astimezone(RESTAURANT_TZ):%H:%M}"
-
-
-def _mensaje_de_aceptacion(order: Order | OrderSnapshot, payment_instructions: str | None) -> str:
-    if order.scheduled_for is not None:
-        cuando = f"Lo vamos a tener listo para las {_horario_programado(order.scheduled_for)}."
-    else:
-        cuando = f"Tiempo estimado de entrega: {order.estimated_minutes} minutos aproximadamente."
-    mensaje = f"¡Tu pedido #{order.shift_number} fue aceptado! ✅\n{cuando}"
-    return f"{mensaje}\n\n{payment_instructions}" if payment_instructions else mensaje
-
-
 def _mensaje_de_cancelacion(order: Order | OrderSnapshot) -> str:
     mensaje = f"Lamentablemente tuvimos que cancelar tu pedido #{order.shift_number}. ❌ Disculpá las molestias."
     if order.is_paid:
@@ -70,13 +54,7 @@ def _mensaje_de_cancelacion(order: Order | OrderSnapshot) -> str:
     return mensaje + "\nSi tenés dudas, contactanos."
 
 
-def build_status_message(
-    order: Order | OrderSnapshot, new_status: str, payment_instructions: str | None = None
-) -> str | None:
-    if new_status == OrderStatus.CONFIRMED:
-        return _mensaje_de_aceptacion(order, payment_instructions)
-    if new_status == OrderStatus.REJECTED:
-        return "Lamentablemente tu pedido fue rechazado. Contactanos si tenés dudas."
+def build_status_message(order: Order | OrderSnapshot, new_status: str) -> str | None:
     if new_status == OrderStatus.CANCELLED:
         return _mensaje_de_cancelacion(order)
     if new_status == OrderStatus.READY_FOR_PICKUP:
@@ -110,9 +88,7 @@ async def notify_trip_dispatched(orders: list[OrderSnapshot]) -> None:
         await _avisar_salida_del_viaje(order)
 
 
-async def notify_order_status_change(
-    order: OrderSnapshot, new_status: str, payment_instructions: str | None = None
-) -> None:
+async def notify_order_status_change(order: OrderSnapshot, new_status: str) -> None:
     if new_status == OrderStatus.ON_THE_WAY:
         # Salir "En Camino" arma el viaje en silencio: el aviso con la llegada sale al iniciarlo (notify_trip_dispatched).
         return
@@ -125,7 +101,7 @@ async def notify_order_status_change(
         )
         return
 
-    mensaje = build_status_message(order, new_status, payment_instructions)
+    mensaje = build_status_message(order, new_status)
     if mensaje is None:
         return
 

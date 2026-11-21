@@ -33,7 +33,7 @@ def status_distribution(db: Session, date_from: datetime | None = None, date_to:
 def top_products(
     db: Session, date_from: datetime | None = None, date_to: datetime | None = None, limit: int = 5
 ) -> list[TopProduct]:
-    """Productos más vendidos del período (por unidades), sin contar los pedidos rechazados."""
+    """Productos más vendidos del período (por unidades), sin contar los pedidos cancelados."""
     return [
         TopProduct(product_name=name, total_quantity=int(quantity), total_revenue=float(revenue))
         for name, quantity, revenue in order_repository.best_selling_products(db, date_from, date_to, limit)
@@ -48,7 +48,7 @@ def _local_weekday(moment: datetime) -> str:
 
 
 def best_selling_day(db: Session, date_from: datetime | None = None, date_to: datetime | None = None) -> BestSellingDay:
-    """Día de la semana con más facturación del período, sin contar los pedidos rechazados.
+    """Día de la semana con más facturación del período, sin contar los pedidos cancelados.
 
     El día se calcula en Python porque depende de la zona horaria del local (y cada motor de base la
     maneja distinto); de la base solo se traen la fecha y el total de cada pedido.

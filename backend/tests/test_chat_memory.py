@@ -168,7 +168,7 @@ def test_al_registrar_responde_el_mensaje_de_exito_sin_volver_a_llamar_a_gemini(
 
     assert len(llm.llamadas) == llamadas_antes + 1
     assert "Recibimos tu pedido" in respuesta
-    assert "Todavía no está confirmado" in respuesta
+    assert "Ya lo estamos preparando" in respuesta
     assert isinstance(servicio.sesiones[SESSION].historial[-1], AIMessage)
 
 

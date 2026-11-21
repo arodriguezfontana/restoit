@@ -36,7 +36,7 @@ test.describe('Pedido presencial (mostrador)', () => {
 
     // Entra directo como confirmado, con la etiqueta de mostrador.
     await goToSection(page, 'Comandas');
-    const card = orderCard(column(page, 'Confirmados'), orderId);
+    const card = orderCard(column(page, 'En preparación'), orderId);
     await expect(card).toContainText(nombre);
     await expect(card).toContainText('Mostrador');
     await expect(card).toContainText(money(2 * 10200 + 3200));

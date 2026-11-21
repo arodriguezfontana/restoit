@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { api } from '@/services/api';
 import type { ApiErrorResponse } from '@/services/api';
 import { lookupClientByPhone } from '@/services/clientService';
-import { createCounterOrder, fetchOrders, updateOrderStatus } from '@/services/orderService';
+import { createCounterOrder, fetchOrders, markOrderSeen, updateOrderDelay, updateOrderStatus } from '@/services/orderService';
 import { fetchTopProducts } from '@/services/statsService';
 
 /** Reemplaza el transporte HTTP de axios: guarda cada request y responde con lo que indique `respond`. */
@@ -133,27 +133,40 @@ describe('orderService', () => {
     transport = mockTransport(() => ({ data: [] }));
 
     await fetchOrders({
-      status: ['Pendiente', 'Confirmado'],
+      status: ['Confirmado', 'En Camino'],
       dateFrom: new Date('2026-09-28T03:00:00.000Z'),
     });
 
     const url = api.getUri(transport.requests[0]);
-    expect(url).toContain('status=Pendiente&status=Confirmado');
+    expect(url).toContain('status=Confirmado&status=En+Camino');
     expect(url).not.toContain('status[]');
     expect(url).toContain('date_from=2026-09-28T03:00:00.000Z');
     expect(url).not.toContain('date_to');
   });
 
-  it('updateOrderStatus solo manda la demora si se indicó', async () => {
+  it('updateOrderStatus manda solo el nuevo estado', async () => {
     transport = mockTransport((config) => ({ data: { id: 5, status: JSON.parse(config.data).status } }));
 
-    await updateOrderStatus(5, 'Rechazado');
-    await updateOrderStatus(5, 'Confirmado', 25);
+    await updateOrderStatus(5, 'Cancelado');
+    await updateOrderStatus(5, 'En Camino');
 
     expect(transport.requests.map((r) => [r.method, r.url, JSON.parse(r.data)])).toEqual([
-      ['patch', '/orders/5/status', { status: 'Rechazado' }],
-      ['patch', '/orders/5/status', { status: 'Confirmado', estimated_minutes: 25 }],
+      ['patch', '/orders/5/status', { status: 'Cancelado' }],
+      ['patch', '/orders/5/status', { status: 'En Camino' }],
     ]);
+  });
+
+  it('updateOrderDelay carga la demora a mano y markOrderSeen apaga la alerta del pedido nuevo', async () => {
+    transport = mockTransport(() => ({ data: { id: 5 } }));
+
+    await updateOrderDelay(5, 40);
+    await markOrderSeen(5);
+
+    expect(transport.requests.map((r) => [r.method, r.url])).toEqual([
+      ['patch', '/orders/5/delay'],
+      ['post', '/orders/5/seen'],
+    ]);
+    expect(JSON.parse(transport.requests[0].data)).toEqual({ estimated_minutes: 40 });
   });
 
   it('createCounterOrder publica el pedido presencial', async () => {

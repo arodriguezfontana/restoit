@@ -466,7 +466,7 @@ def test_eliminar_producto_en_promocion_con_pedidos_en_curso_falla_con_400(clien
     order = Order(
         customer_name="Ana Lopez",
         shipping_address="Av Siempre Viva 742",
-        status=OrderStatus.PENDING.value,
+        status=OrderStatus.CONFIRMED.value,
         total_amount=promo.price,
     )
     order.items = [OrderItem(promotion=promo, quantity=1, unit_price=promo.price)]
