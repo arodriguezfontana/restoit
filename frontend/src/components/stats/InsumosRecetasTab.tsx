@@ -3,8 +3,7 @@ import { fetchIngredientConsumption } from '@/services/ingredientService';
 import { fetchStrategicInsight } from '@/services/statsService';
 import type { IngredientConsumptionResponse } from '@/types/ingredient';
 import type { StrategicInsightResponse } from '@/types/stats';
-import type { DateRangePreset } from '@/utils/dateRange';
-import { parseDateInputValue, rangeForPreset, presetLabel } from '@/utils/dateRange';
+import { rangeForPreset } from '@/utils/dateRange';
 import { formatCurrency } from '@/utils/currency';
 import { formatQuantity } from '@/utils/ingredients';
 import { PanelNote } from '@/components/ui/PanelNote';
@@ -15,29 +14,28 @@ interface InsumosRecetasTabProps {
 }
 
 export function InsumosRecetasTab({ range: externalRange }: InsumosRecetasTabProps = {}) {
-  const [internalPreset, setInternalPreset] = useState<DateRangePreset>('month');
-  const [customFrom, setCustomFrom] = useState('');
-  const [customTo, setCustomTo] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
 
   const [report, setReport] = useState<IngredientConsumptionResponse | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [aiData, setAiData] = useState<StrategicInsightResponse | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
 
-  const internalRange = useMemo(
-    () =>
-      rangeForPreset(internalPreset, {
-        from: customFrom ? parseDateInputValue(customFrom) : undefined,
-        to: customTo ? parseDateInputValue(customTo) : undefined,
-      }),
-    [internalPreset, customFrom, customTo]
-  );
-
+  const internalRange = useMemo(() => rangeForPreset('month'), []);
   const range = externalRange ?? internalRange;
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [prevFilter, setPrevFilter] = useState({ searchTerm, from: range.from, to: range.to });
+  if (searchTerm !== prevFilter.searchTerm || range.from !== prevFilter.from || range.to !== prevFilter.to) {
+    setPrevFilter({ searchTerm, from: range.from, to: range.to });
+    if (range.from !== prevFilter.from || range.to !== prevFilter.to) {
+      setLoading(true);
+    }
+    setCurrentPage(1);
+  }
 
   const handleRequestAi = useCallback(async () => {
     setAiLoading(true);
@@ -57,8 +55,6 @@ export function InsumosRecetasTab({ range: externalRange }: InsumosRecetasTabPro
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(null);
 
     fetchIngredientConsumption({
       dateFrom: range.from,
@@ -67,12 +63,16 @@ export function InsumosRecetasTab({ range: externalRange }: InsumosRecetasTabPro
       .then((data) => {
         if (!cancelled) {
           setReport(data);
-          setLoading(false);
+          setError(null);
         }
       })
       .catch(() => {
         if (!cancelled) {
           setError('No se pudo cargar el consumo de insumos.');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
           setLoading(false);
         }
       });
@@ -82,7 +82,7 @@ export function InsumosRecetasTab({ range: externalRange }: InsumosRecetasTabPro
     };
   }, [range.from, range.to]);
 
-  const items = report?.items ?? [];
+  const items = useMemo(() => report?.items ?? [], [report?.items]);
 
   const totalSpent = useMemo(() => {
     return items.reduce((acc, item) => acc + (item.total_cost ?? item.total_quantity * (item.unit_cost ?? 0)), 0);
@@ -105,12 +105,6 @@ export function InsumosRecetasTab({ range: externalRange }: InsumosRecetasTabPro
   }, [items, searchTerm]);
 
   const PAGE_SIZE = 6;
-  const [currentPage, setCurrentPage] = useState(1);
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm, range]);
-
   const totalPages = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE));
   const paginatedItems = useMemo(() => {
     const start = (currentPage - 1) * PAGE_SIZE;

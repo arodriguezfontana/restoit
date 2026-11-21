@@ -3,6 +3,7 @@ import type { Coupon } from '@/types/coupon';
 import { fetchCoupons, createCoupon, updateCoupon, deleteCoupon } from '@/services/couponService';
 import { PanelNote } from '@/components/ui/PanelNote';
 import { TicketIcon } from '@/components/Icons';
+import { getErrorMessage } from '@/utils/errors';
 
 const DISCOUNT_PRESETS = [5, 10, 15, 20, 25, 30, 50];
 
@@ -17,20 +18,21 @@ export function CouponsSection() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
-  const loadCoupons = async () => {
-    try {
-      setLoading(true);
-      const data = await fetchCoupons();
-      setCoupons(data);
-    } catch {
-      setActionError('Error al cargar la lista de cupones.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    loadCoupons();
+    let cancelled = false;
+    fetchCoupons()
+      .then((data) => {
+        if (!cancelled) setCoupons(data);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setActionError(getErrorMessage(err, 'Error al cargar la lista de cupones.'));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -58,9 +60,8 @@ export function CouponsSection() {
       setCoupons((prev) => [created, ...prev]);
       setNewCode('');
       setActionSuccess(`¡Cupón ${created.code} (${created.discount_percentage}% OFF) creado exitosamente!`);
-    } catch (err: any) {
-      const msg = err.response?.data?.detail || 'No se pudo crear el cupón.';
-      setActionError(msg);
+    } catch (err: unknown) {
+      setActionError(getErrorMessage(err, 'No se pudo crear el cupón.'));
     } finally {
       setIsSubmitting(false);
     }
@@ -75,8 +76,8 @@ export function CouponsSection() {
       setActionSuccess(
         updated.is_active ? `Cupón ${updated.code} reactivado.` : `Cupón ${updated.code} pausado.`
       );
-    } catch (err: any) {
-      setActionError(err.response?.data?.detail || 'Error al actualizar el estado del cupón.');
+    } catch (err: unknown) {
+      setActionError(getErrorMessage(err, 'Error al actualizar el estado del cupón.'));
     }
   };
 
@@ -88,8 +89,8 @@ export function CouponsSection() {
       setCoupons((prev) => prev.filter((c) => c.id !== couponId));
       setDeletingId(null);
       setActionSuccess('Cupón eliminado.');
-    } catch (err: any) {
-      setActionError(err.response?.data?.detail || 'Error al eliminar el cupón.');
+    } catch (err: unknown) {
+      setActionError(getErrorMessage(err, 'Error al eliminar el cupón.'));
       setDeletingId(null);
     }
   };

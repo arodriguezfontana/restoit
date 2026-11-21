@@ -1,14 +1,13 @@
 """Tests para el módulo de Cupones Web y las nuevas acciones del Copilot."""
 
-from unittest.mock import patch
 import pytest
 
 from app.core.config import settings
 from app.models.coupon import Coupon
-from app.models.menu import Category, Ingredient, Product, ProductIngredient
+from app.models.menu import Category
 from app.models.promotion import Promotion
-from app.schemas.predictive_schemas import CopilotActionExecutionPayload, CopilotQuestionPayload, CopilotSuggestedAction
-from app.services.copilot_service import ask_copilot, execute_copilot_action
+from app.schemas.predictive_schemas import CopilotActionExecutionPayload
+from app.services.copilot_service import execute_copilot_action
 
 COUPONS_URL = "/api/v1/coupons"
 VALIDATE_URL = "/api/v1/coupons/validate"
@@ -102,7 +101,7 @@ def test_web_order_with_valid_coupon(public_client, client, products):
     body = res.json()
 
     # 20% discount on 8500 = 6800
-    expected_total = 8500.0 * 0.8
+    expected_total = base_price * 0.8
     assert body["total_amount"] == expected_total
     assert "DESCUENTO20" in (body.get("notes") or "")
 

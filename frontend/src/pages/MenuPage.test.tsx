@@ -229,6 +229,7 @@ describe('MenuPage', () => {
         { product_id: COCA.id, quantity: 1 },
       ],
       payment_method: 'efectivo',
+      coupon_code: null,
     });
     expect(await screen.findByRole('heading', { name: 'Pedido #321' })).toBeInTheDocument();
     expect(mercadopago.redirectToCheckout).not.toHaveBeenCalled();

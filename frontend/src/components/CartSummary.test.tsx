@@ -5,7 +5,6 @@ import { CartSummary } from './CartSummary';
 import { CartProvider } from '@/context/CartContext';
 import { useCart } from '@/hooks/useCart';
 import * as couponService from '@/services/couponService';
-import { formatCurrency } from '@/utils/currency';
 import type { Product } from '@/types/order';
 
 const mockProduct: Product = {

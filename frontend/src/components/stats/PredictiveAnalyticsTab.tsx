@@ -4,7 +4,6 @@ import type { PredictionsResponse } from '@/types/stats';
 import { formatCurrency } from '@/utils/currency';
 import { formatQuantity } from '@/utils/ingredients';
 import { PanelNote } from '@/components/ui/PanelNote';
-import { SparklesIcon } from '@/components/Icons';
 
 interface PredictiveAnalyticsTabProps {
   refreshKey?: number;
@@ -17,22 +16,50 @@ export function PredictiveAnalyticsTab({ refreshKey }: PredictiveAnalyticsTabPro
   const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 6;
 
-  const loadData = () => {
+  const [prevRefreshKey, setPrevRefreshKey] = useState(refreshKey);
+  if (refreshKey !== prevRefreshKey) {
+    setPrevRefreshKey(refreshKey);
+    setLoading(true);
+  }
+
+  const handleRetry = () => {
     setLoading(true);
     setError(null);
     fetchPredictions()
       .then((res) => {
         setData(res);
-        setLoading(false);
       })
       .catch(() => {
         setError('No se pudieron calcular las predicciones de demanda e insumos. Podés reintentar.');
+      })
+      .finally(() => {
         setLoading(false);
       });
   };
 
   useEffect(() => {
-    loadData();
+    let cancelled = false;
+    fetchPredictions()
+      .then((res) => {
+        if (!cancelled) {
+          setData(res);
+          setError(null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setError('No se pudieron calcular las predicciones de demanda e insumos. Podés reintentar.');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [refreshKey]);
 
   if (loading) {
@@ -49,7 +76,7 @@ export function PredictiveAnalyticsTab({ refreshKey }: PredictiveAnalyticsTabPro
         <p className="text-sm font-semibold text-red-700">{error ?? 'Ocurrió un error inesperado.'}</p>
         <button
           type="button"
-          onClick={loadData}
+          onClick={handleRetry}
           className="rounded-xl bg-black px-4 py-2 text-xs font-bold text-white hover:bg-gray-800 transition"
         >
           Reintentar predicción

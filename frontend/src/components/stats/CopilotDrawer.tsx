@@ -8,15 +8,6 @@ interface CopilotDrawerProps {
   onClose: () => void;
 }
 
-const QUICK_QUESTIONS = [
-  '¿Cuáles son los 3 insumos con más gasto este mes?',
-  '¿Qué día tuvimos más cancelaciones?',
-  '¿Qué insumos debería comprar antes del fin de semana?',
-  '¿Cuánto facturamos la última semana?',
-  '¿Cuáles son los platos más rentables?',
-  '¿Cómo viene el cumplimiento de metas?',
-];
-
 export function CopilotDrawer({ isOpen, onClose }: CopilotDrawerProps) {
   const [messages, setMessages] = useState<CopilotChatMessage[]>([
     {

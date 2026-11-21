@@ -15,11 +15,16 @@ from app.core.config import settings
 from app.core.errors import BusinessRuleError, NotFoundError
 from app.core.time import RESTAURANT_TZ, ahora_local
 from app.db.session import transaction
-from app.models.coupon import Coupon
 from app.models.menu import Category, Ingredient, Product, ProductIngredient
 from app.models.order import Order, OrderStatus
 from app.models.promotion import Promotion
-from app.repositories import analytics_repository, coupon_repository, ingredient_repository, order_repository, promotion_repository
+from app.repositories import (
+    analytics_repository,
+    coupon_repository,
+    ingredient_repository,
+    order_repository,
+    promotion_repository,
+)
 from app.schemas.coupon_schemas import CouponCreate
 from app.schemas.predictive_schemas import (
     ConversationMessage,

@@ -25,11 +25,6 @@ export function PromotionCard({ promotion }: { promotion: Promotion }) {
         )}
 
         <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 border border-purple-200">
-              Promo
-            </span>
-          </div>
           <h3 className="font-bold text-gray-900 text-base sm:text-lg leading-snug">
             {promotion.name}
           </h3>

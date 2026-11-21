@@ -118,11 +118,11 @@ export function AiAdviceSection({
             )}
 
             {/* Diagnóstico General */}
-            <div className="bg-rose-50/70 border border-rose-200/70 rounded-xl p-4">
-              <span className="text-xs font-bold uppercase tracking-wide text-rose-900 block mb-1">
+            <div className="bg-orange-50/70 border border-orange-200/70 rounded-xl p-4">
+              <span className="text-xs font-bold uppercase tracking-wide text-orange-900 block mb-1">
                 Diagnóstico
               </span>
-              <p className="text-xs leading-relaxed text-rose-950 font-medium">{aiData.summary}</p>
+              <p className="text-xs leading-relaxed text-orange-950 font-medium">{aiData.summary}</p>
             </div>
 
             {/* Debilidades y Oportunidades: 3 puntos cada uno */}

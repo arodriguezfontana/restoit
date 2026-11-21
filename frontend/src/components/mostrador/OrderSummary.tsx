@@ -50,16 +50,7 @@ function SummaryLine({ line, onQuantityChange, onRemove }: SummaryLineProps) {
         </div>
       </td>
       <td className="py-2 px-1 text-gray-900">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {isPromo && (
-            <span
-              className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border bg-purple-100 text-purple-700 border-purple-200"
-            >
-              Promo
-            </span>
-          )}
-          <span>{name}</span>
-        </div>
+        <span>{name}</span>
       </td>
       <td className="py-2 px-1 text-right text-gray-600 whitespace-nowrap">{formatCurrency(price)}</td>
       <td className="py-2 px-1 text-right font-semibold text-gray-900 whitespace-nowrap">
