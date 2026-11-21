@@ -2,7 +2,9 @@ import { api } from './api';
 import type {
   BestSellingDayResponse,
   BusinessGoalsResponse,
+  CopilotAnswerResponse,
   DashboardKPIsResponse,
+  PredictionsResponse,
   StatsParams,
   StrategicInsightResponse,
   TopProduct,
@@ -69,3 +71,22 @@ export async function fetchStrategicInsight(params: StatsParams = {}): Promise<S
   });
   return data;
 }
+
+export async function fetchPredictions(weeks: number = 8): Promise<PredictionsResponse> {
+  const { data } = await api.get<PredictionsResponse>('/stats/predictions', {
+    params: { weeks },
+  });
+  return data;
+}
+
+export async function askCopilot(
+  question: string,
+  history?: { role: string; content: string }[]
+): Promise<CopilotAnswerResponse> {
+  const { data } = await api.post<CopilotAnswerResponse>('/stats/copilot/ask', {
+    question,
+    conversation_history: history,
+  });
+  return data;
+}
+

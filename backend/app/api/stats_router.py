@@ -13,8 +13,9 @@ from app.schemas.analytics_schemas import (
     UpdateBusinessGoalsPayload,
 )
 from app.schemas.ingredient_schemas import IngredientConsumptionResponse
+from app.schemas.predictive_schemas import CopilotAnswerResponse, CopilotQuestionPayload, PredictionsResponse
 from app.schemas.stats_schemas import BestSellingDayResponse, StatusDistributionResponse, TopProductResponse
-from app.services import analytics_service, stats_service
+from app.services import analytics_service, copilot_service, predictive_service, stats_service
 from app.services.ingredient_service import ingredient_consumption
 
 router = APIRouter(dependencies=[Depends(require_admin_pin)])
@@ -121,3 +122,30 @@ def get_strategic_insight(
     kpis = analytics_service.calculate_dashboard_kpis(db, date_from, date_to)
     insight = analytics_service.generate_strategic_insight(kpis, db=db, date_from=date_from, date_to=date_to)
     return StrategicInsightResponse.model_validate(insight)
+
+
+# --- US-67: Analítica Predictiva y Copilot Q&A Comercial ---------------------------------------------
+
+
+@router.get("/predictions", dependencies=[Depends(get_current_admin)])
+def get_predictions(
+    weeks: int = Query(8, ge=4, le=16, description="Semanas históricas analizadas para la proyección"),
+    db: Session = Depends(get_db),
+) -> PredictionsResponse:
+    """Calcula proyecciones de pedidos y facturación a 7 días (diferenciando semana y fin de semana)
+
+    y demanda proyectada de insumos según recetas, con recomendaciones estratégicas de IA / Gemini.
+    """
+    return predictive_service.calculate_predictions(db, historical_weeks=weeks)
+
+
+@router.post("/copilot/ask", dependencies=[Depends(get_current_admin)])
+def ask_copilot(
+    payload: CopilotQuestionPayload,
+    db: Session = Depends(get_db),
+) -> CopilotAnswerResponse:
+    """Asistente Q&A comercial que responde preguntas en lenguaje natural ejecutando funciones sobre
+
+    la base de datos real con cero alucinaciones numéricas y citando el período consultado.
+    """
+    return copilot_service.ask_copilot(db, payload)
