@@ -245,6 +245,7 @@ class WebOrderCreate(_OrderCreate):
     """
 
     payment_method: PaymentMethod = PaymentMethod.CASH
+    coupon_code: str | None = Field(None, max_length=50)
 
 
 class CounterOrderCreate(_OrderCreate):

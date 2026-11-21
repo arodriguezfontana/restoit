@@ -3,6 +3,7 @@
 import collections
 import json
 import logging
+import re
 import unicodedata
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -11,16 +12,24 @@ from google import genai
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.errors import BusinessRuleError, NotFoundError
 from app.core.time import RESTAURANT_TZ, ahora_local
-from app.models.menu import Ingredient, Product, ProductIngredient
+from app.db.session import transaction
+from app.models.coupon import Coupon
+from app.models.menu import Category, Ingredient, Product, ProductIngredient
 from app.models.order import Order, OrderStatus
-from app.repositories import analytics_repository, ingredient_repository, order_repository
+from app.models.promotion import Promotion
+from app.repositories import analytics_repository, coupon_repository, ingredient_repository, order_repository, promotion_repository
+from app.schemas.coupon_schemas import CouponCreate
 from app.schemas.predictive_schemas import (
     ConversationMessage,
+    CopilotActionExecutionPayload,
+    CopilotActionExecutionResponse,
     CopilotAnswerResponse,
     CopilotQuestionPayload,
+    CopilotSuggestedAction,
 )
-from app.services import analytics_service, predictive_service
+from app.services import analytics_service, coupon_service, predictive_service, promotion_service
 from app.services.gemini_models import modelos
 from app.services.ingredient_service import consumption_totals
 from app.services.stats_service import WEEKDAYS
@@ -334,6 +343,287 @@ def query_weekend_purchases_forecast(db: Session) -> dict[str, Any]:
     }
 
 
+def query_promotions_advice(db: Session) -> dict[str, Any]:
+    """Genera recomendación de promoción comercial para impulsar ventas basada en rotación y margen."""
+    active_products = (
+        db.query(Product)
+        .filter(Product.is_active.is_(True), Product.is_archived.is_(False))
+        .all()
+    )
+    if len(active_products) < 2:
+        return {"can_create_promo": False, "reason": "Se requieren al menos 2 productos activos en la carta."}
+
+    now = ahora_local()
+    date_from = (now - timedelta(days=30)).replace(hour=0, minute=0, second=0, microsecond=0)
+    utc_from = date_from.astimezone(timezone.utc)
+    utc_to = now.astimezone(timezone.utc)
+    best_sellers = order_repository.best_selling_products(db, utc_from, utc_to, limit=20)
+    best_seller_names = [name for name, _, _ in best_sellers]
+
+    selected: list[Product] = []
+    for name in best_seller_names:
+        for p in active_products:
+            if p.name == name and p not in selected:
+                selected.append(p)
+                break
+        if len(selected) == 2:
+            break
+
+    if len(selected) < 2:
+        for p in active_products:
+            if p not in selected:
+                selected.append(p)
+            if len(selected) == 2:
+                break
+
+    p1, p2 = selected[0], selected[1]
+    orig_price = float(p1.price) + float(p2.price)
+    discount_pct = 15
+    promo_price = round(orig_price * (1 - discount_pct / 100.0), 2)
+    promo_name = f"Promo {p1.name} + {p2.name}"
+
+    return {
+        "can_create_promo": True,
+        "product_1": {"id": p1.id, "name": p1.name, "price": float(p1.price)},
+        "product_2": {"id": p2.id, "name": p2.name, "price": float(p2.price)},
+        "original_price": orig_price,
+        "discount_pct": discount_pct,
+        "promo_price": promo_price,
+        "recommended_promo": {
+            "title": f"Crear {promo_name}",
+            "description": f"Combo con 15% de descuento (${promo_price:,.2f} en vez de ${orig_price:,.2f}) uniendo {p1.name} y {p2.name} para dinamizar las ventas.",
+            "payload": {
+                "name": promo_name,
+                "description": f"Combo promocional con 15% de descuento: {p1.name} y {p2.name}.",
+                "price": promo_price,
+                "is_active": True,
+                "items": [
+                    {"product_id": p1.id, "quantity": 1},
+                    {"product_id": p2.id, "quantity": 1},
+                ],
+            },
+        },
+    }
+
+
+def query_activate_product(db: Session, term: str | None = None) -> dict[str, Any]:
+    """Consulta productos pausados de la carta que el administrador podría reactivar."""
+    inactive_products = (
+        db.query(Product)
+        .filter(Product.is_active.is_(False), Product.is_archived.is_(False))
+        .all()
+    )
+    if not inactive_products:
+        return {"has_inactive": False, "target_product": None, "inactive_products": []}
+
+    target = None
+    if term:
+        norm_t = _normalize_token(term)
+        for p in inactive_products:
+            if norm_t in _normalize_token(p.name):
+                target = p
+                break
+
+    if target is None:
+        target = inactive_products[0]
+
+    return {
+        "has_inactive": True,
+        "target_product": {"id": target.id, "name": target.name, "price": float(target.price or 0.0)},
+        "inactive_products": [{"id": p.id, "name": p.name} for p in inactive_products],
+    }
+
+
+def _extract_percentage(question: str, default: int = 10) -> int:
+    m = re.search(r"(\d+)\s*%", question)
+    if m:
+        return max(1, min(100, int(m.group(1))))
+    m = re.search(r"\b(5|10|15|20|25|30|35|40|50)\b", question)
+    if m:
+        return int(m.group(1))
+    return default
+
+
+def _extract_amount(question: str) -> float | None:
+    m = re.search(r"\$\s*(\d+(?:[.,]\d+)?)", question)
+    if m:
+        val = m.group(1).replace(".", "").replace(",", ".")
+        return float(val)
+    m = re.search(r"\ba\s+(\d{3,7})\b", question)
+    if m:
+        return float(m.group(1))
+    return None
+
+
+def _find_mentioned_category(db: Session, question: str) -> Category | None:
+    categories = db.query(Category).all()
+    norm_q = _normalize_token(question)
+    for cat in categories:
+        norm_c = _normalize_token(cat.name)
+        if norm_c in norm_q or norm_c.rstrip("s") in norm_q or (len(norm_c) >= 4 and norm_c[:4] in norm_q):
+            return cat
+    return categories[0] if categories else None
+
+
+def query_product_price_adjustment(db: Session, question: str, term: str | None = None) -> dict[str, Any]:
+    """Prepara sugerencia de ajuste de precio para un plato puntual."""
+    prod = None
+    if term:
+        norm_t = _normalize_token(term)
+        prods = db.query(Product).filter(Product.is_archived.is_(False)).all()
+        for p in prods:
+            if norm_t in _normalize_token(p.name):
+                prod = p
+                break
+    if not prod:
+        prod = db.query(Product).filter(Product.is_active.is_(True), Product.is_archived.is_(False)).first()
+    if not prod:
+        return {"found": False}
+
+    cur_price = float(prod.price)
+    extracted_amt = _extract_amount(question)
+    pct = _extract_percentage(question, default=10)
+    if extracted_amt and extracted_amt > 100:
+        new_price = extracted_amt
+    elif "bajar" in question.lower() or "reducir" in question.lower() or "descuento" in question.lower():
+        new_price = round(cur_price * (1 - pct / 100.0), 2)
+    else:
+        new_price = round(cur_price * (1 + pct / 100.0), 2)
+
+    return {
+        "found": True,
+        "product_id": prod.id,
+        "product_name": prod.name,
+        "current_price": cur_price,
+        "new_price": new_price,
+        "percentage": pct,
+    }
+
+
+def query_category_price_adjustment(db: Session, question: str) -> dict[str, Any]:
+    """Prepara sugerencia de ajuste porcentual masivo para una categoría de productos."""
+    cat = _find_mentioned_category(db, question)
+    if not cat:
+        return {"found": False}
+
+    prods = db.query(Product).filter(
+        Product.category_id == cat.id,
+        Product.is_active.is_(True),
+        Product.is_archived.is_(False),
+    ).all()
+    pct = _extract_percentage(question, default=10)
+
+    return {
+        "found": True,
+        "category_id": cat.id,
+        "category_name": cat.name,
+        "product_count": len(prods),
+        "percentage": pct,
+        "preview_products": [
+            {
+                "id": p.id,
+                "name": p.name,
+                "old_price": float(p.price),
+                "new_price": round(float(p.price) * (1 + pct / 100.0), 2),
+            }
+            for p in prods[:5]
+        ],
+    }
+
+
+def query_toggle_promotion(db: Session, question: str) -> dict[str, Any]:
+    """Prepara sugerencia para pausar o reactivar una promoción de la carta."""
+    is_pause = any(w in question.lower() for w in ["pausar", "desactivar", "ocultar", "sacar", "bajar"])
+    promos = db.query(Promotion).all()
+    if not promos:
+        return {"found": False}
+
+    norm_q = _normalize_token(question)
+    target = None
+    for p in promos:
+        norm_p = _normalize_token(p.name)
+        if norm_p in norm_q or any((len(w) >= 5 and w in norm_q) for w in norm_p.split()):
+            target = p
+            break
+    if not target:
+        for p in promos:
+            if (is_pause and p.is_active) or (not is_pause and not p.is_active):
+                target = p
+                break
+    if not target:
+        target = promos[0]
+
+    target_is_active = not is_pause
+    return {
+        "found": True,
+        "promotion_id": target.id,
+        "promotion_name": target.name,
+        "current_is_active": target.is_active,
+        "target_is_active": target_is_active,
+        "action_label": "Pausar" if not target_is_active else "Reactivar",
+    }
+
+
+def query_shopping_list(db: Session) -> dict[str, Any]:
+    """Genera lista de compras consolidada para los próximos 7 días a partir de proyecciones."""
+    predictions = predictive_service.calculate_predictions(db, historical_weeks=26)
+    demands = predictions.ingredient_demands
+    items = [
+        {
+            "name": d.ingredient_name,
+            "quantity": d.projected_quantity,
+            "unit": d.unit,
+            "cost": d.estimated_cost,
+        }
+        for d in demands
+    ]
+    total_cost = sum(it["cost"] for it in items)
+    return {
+        "items": items,
+        "count": len(items),
+        "total_estimated_cost": round(total_cost, 2),
+    }
+
+
+def query_compensate_customers(db: Session) -> dict[str, Any]:
+    """Prepara sugerencia de cupón de descuento para resarcir cancelaciones o demoras."""
+    return {
+        "code": "DISCULPAS-15",
+        "discount_percentage": 15,
+        "reason": "Compensación para clientes con pedidos cancelados o incidencias de demora.",
+    }
+
+
+def query_targeted_promotion(db: Session, question: str) -> dict[str, Any]:
+    """Prepara sugerencia de combo o promoción dirigida a días lentos o franjas horarias."""
+    active_prods = db.query(Product).filter(
+        Product.is_active.is_(True),
+        Product.is_archived.is_(False),
+    ).all()
+    if len(active_prods) < 2:
+        return {"can_create": False}
+
+    p1, p2 = active_prods[0], active_prods[1]
+    orig_price = float(p1.price) + float(p2.price)
+    discount_pct = 20
+    promo_price = round(orig_price * (1 - discount_pct / 100.0), 2)
+    name = f"Promo Días Lentos ({p1.name} + {p2.name})"
+
+    return {
+        "can_create": True,
+        "name": name,
+        "product_1": p1.name,
+        "product_2": p2.name,
+        "orig_price": orig_price,
+        "promo_price": promo_price,
+        "discount_pct": discount_pct,
+        "items": [
+            {"product_id": p1.id, "quantity": 1},
+            {"product_id": p2.id, "quantity": 1},
+        ],
+    }
+
+
 # --- Detección de intención y ejecución ----------------------------------------------------------------
 
 
@@ -526,6 +816,77 @@ def _detect_intent(question: str, db: Session) -> tuple[str, str | None]:
     ]
     if any(t in q or t in norm_q for t in elimination_triggers):
         return "underperforming_products", None
+
+    if any(k in q or k in norm_q for k in ["lista de compras", "orden de compra", "generar lista de compras", "armar lista de compras", "compras de insumos"]):
+        return "shopping_list", None
+
+    if any(k in q or k in norm_q for k in ["compensar", "resarcir", "cupon de disculpas", "cupón de disculpas", "descuento por cancelacion", "descuento por cancelación", "compensacion", "compensación"]):
+        return "compensate_customers", None
+
+    if any(k in q or k in norm_q for k in ["promocion dirigida", "promoción dirigida", "promo dirigida", "dias lentos", "días lentos", "para martes", "para dias lentos"]):
+        return "targeted_promotion", None
+
+    if any(k in q or k in norm_q for k in ["pausar promo", "pausar promocion", "pausar promoción", "desactivar promo", "desactivar promocion", "reactivar promo", "reactivar promocion", "reactivar promoción"]):
+        return "toggle_promotion", None
+
+    cat_price_triggers = [
+        "aumentar categoria",
+        "aumentar categoría",
+        "subir precios de la categoria",
+        "subir precios de la categoría",
+        "ajustar precios de",
+        "precios por categoria",
+        "precios por categoría",
+        "aumentar a la categoria",
+        "aumentar a la categoría",
+    ]
+    if any(t in q or t in norm_q for t in cat_price_triggers) or (
+        any(w in q for w in ["aumentar", "subir", "ajustar"])
+        and any(c in q for c in ["pizza", "empanada", "bebida", "postre", "categoria", "categoría"])
+        and ("%" in q or any(num in q for num in ["10", "15", "20", "25", "30"]))
+    ):
+        return "category_price_adjustment", None
+
+    prod_price_triggers = [
+        "precio de",
+        "subir precio de",
+        "aumentar precio de",
+        "bajar precio de",
+        "cambiar precio de",
+        "ajustar precio de",
+    ]
+    if any(t in q or t in norm_q for t in prod_price_triggers) and prod_matches:
+        return "product_price_adjustment", prod_matches[0]
+
+    promo_triggers = [
+        "promocion",
+        "promoción",
+        "promo",
+        "combo",
+        "descuento",
+        "aumentar ventas",
+        "aumentar las ventas",
+        "subir ventas",
+        "subir las ventas",
+        "impulsar ventas",
+        "crear oferta",
+        "oferta",
+    ]
+    if any(t in q or t in norm_q for t in promo_triggers):
+        return "promotions_advice", None
+
+    activation_triggers = [
+        "activar",
+        "reactivar",
+        "habilitar plato",
+        "habilitar producto",
+        "volver a poner",
+        "volver a la carta",
+        "poner en la carta",
+    ]
+    if any(t in q or t in norm_q for t in activation_triggers):
+        target = prod_matches[0] if prod_matches else None
+        return "activate_product", target
 
     advice_triggers = [
         "conviene comprar",
@@ -822,6 +1183,145 @@ def _format_deterministic_answer(intent: str, data: dict[str, Any], cited_period
             "¿Qué insumos debería comprar antes del fin de semana?",
         ]
 
+    if intent == "promotions_advice":
+        promo_data = data.get("recommended_promo")
+        if not promo_data or not data.get("can_create_promo"):
+            return (
+                "Para armar una promoción necesitás contar con al menos dos productos activos en la carta.",
+                ["¿Cuáles son los platos más vendidos?", "¿Cuáles son los platos más rentables?"],
+            )
+        p1 = data["product_1"]
+        p2 = data["product_2"]
+        orig = data["original_price"]
+        promo_p = data["promo_price"]
+        desc = data["discount_pct"]
+        text = (
+            f"Te recomiendo lanzar una promoción combinando {p1['name']} y {p2['name']}. "
+            f"El precio regular conjunto es de ${orig:,.2f}, y con un {desc}% de descuento promocional "
+            f"quedaría en ${promo_p:,.2f} para impulsar el volumen de pedidos."
+        )
+        return text, [
+            "¿Cuáles son los platos más vendidos?",
+            "¿Cuáles son los platos más rentables?",
+            "¿Cómo viene el cumplimiento de metas?",
+        ]
+
+    if intent == "activate_product":
+        if not data.get("has_inactive"):
+            return (
+                "Actualmente todos los productos del menú se encuentran activos en la carta.",
+                ["¿Qué producto podría eliminar y por qué cambiarlo?", "¿Cuáles son los platos más vendidos?"],
+            )
+        target = data["target_product"]
+        text = (
+            f"El producto {target['name']} se encuentra actualmente pausado fuera de la carta. "
+            f"Podés reactivarlo para que los clientes vuelvan a encontrarlo en el menú digital."
+        )
+        return text, [
+            "¿Cuáles son los platos más vendidos?",
+            "¿Qué producto podría eliminar y por qué cambiarlo?",
+        ]
+
+    if intent == "product_price_adjustment":
+        if not data.get("found"):
+            return (
+                "No encontré el producto solicitado para modificar su precio.",
+                ["¿Cuáles son los platos más vendidos?", "¿Cuáles son los platos más rentables?"],
+            )
+        name = data["product_name"]
+        cur = data["current_price"]
+        new_p = data["new_price"]
+        diff = new_p - cur
+        text = (
+            f"El plato {name} tiene un precio actual de ${cur:,.2f}. "
+            f"El precio ajustado sugerido es de ${new_p:,.2f} ({'+' if diff >= 0 else ''}${diff:,.2f})."
+        )
+        return text, [
+            f"¿Cuánto vendimos de {name} este mes?",
+            "¿Cuáles son los platos más rentables?",
+        ]
+
+    if intent == "category_price_adjustment":
+        if not data.get("found") or not data.get("product_count"):
+            return (
+                "No encontré productos activos en la categoría seleccionada.",
+                ["¿Cuáles son las categorías con más ventas?", "¿Cuáles son los platos más vendidos?"],
+            )
+        cat = data["category_name"]
+        pct = data["percentage"]
+        count = data["product_count"]
+        text = (
+            f"La categoría {cat} cuenta con {count} productos activos. "
+            f"Un aumento general del {pct}% actualizará los precios para absorber la inflación de insumos "
+            f"y preservar el margen de ganancia."
+        )
+        return text, [
+            "¿Cuáles son los 3 insumos con más gasto este mes?",
+            "¿Cómo viene el cumplimiento de metas?",
+        ]
+
+    if intent == "toggle_promotion":
+        if not data.get("found"):
+            return (
+                "No hay promociones registradas en el sistema para modificar.",
+                ["¿Qué promoción me recomendás crear?", "¿Cuáles son los platos más vendidos?"],
+            )
+        name = data["promotion_name"]
+        act = data["action_label"]
+        text = (
+            f"Podés {act.lower()} la promoción '{name}' para actualizar la oferta disponible "
+            f"en el menú digital según la rotación de ventas."
+        )
+        return text, [
+            "¿Qué promoción me recomendás crear?",
+            "¿Cuáles son los platos más rentables?",
+        ]
+
+    if intent == "shopping_list":
+        cnt = data.get("count", 0)
+        tot = data.get("total_estimated_cost", 0.0)
+        text = (
+            f"Se calcularon {cnt} insumos críticos requeridos para la demanda de los próximos 7 días, "
+            f"con un gasto total estimado de ${tot:,.2f}. Podés generar la orden de compras detallada "
+            f"para abastecer la cocina a tiempo."
+        )
+        return text, [
+            "¿Qué insumos debería comprar antes del fin de semana?",
+            "¿Cuáles son los 3 insumos con más gasto este mes?",
+        ]
+
+    if intent == "compensate_customers":
+        code = data.get("code", "DISCULPAS-15")
+        pct = data.get("discount_percentage", 15)
+        text = (
+            f"Para resarcir a clientes que experimentaron pedidos cancelados o demoras imprevistas, "
+            f"te sugiero habilitar el cupón web '{code}' con un {pct}% de descuento en su próxima compra."
+        )
+        return text, [
+            "¿Qué día tuvimos más cancelaciones?",
+            "¿Cuánto facturamos la última semana?",
+        ]
+
+    if intent == "targeted_promotion":
+        if not data.get("can_create"):
+            return (
+                "Se requieren al menos 2 productos activos para estructurar una promoción dirigida.",
+                ["¿Cuáles son los platos más vendidos?", "¿Qué promoción me recomendás crear?"],
+            )
+        name = data["name"]
+        p1 = data["product_1"]
+        p2 = data["product_2"]
+        promo_p = data["promo_price"]
+        pct = data["discount_pct"]
+        text = (
+            f"Para estimular las ventas durante los días de menor demanda (como martes o miércoles), "
+            f"te recomiendo lanzar '{name}' con un {pct}% de descuento (${promo_p:,.2f}) combinando {p1} y {p2}."
+        )
+        return text, [
+            "¿Cuáles son los platos más vendidos?",
+            "¿Cómo viene el cumplimiento de metas?",
+        ]
+
     # Intent default: revenue
     rev = data.get("revenue", 0.0)
     completed = data.get("completed_orders", 0)
@@ -870,12 +1370,16 @@ REGLAS ESTRICTAS DE RESPUESTA:
    - Respondé directamente indicando los platos con menor o nula venta/facturación de acuerdo al JSON underperforming_products.
    - Explicá por qué considerarlo (nula o muy baja salida comercial en el período analizado).
    - Sugerí con qué reemplazarlo basándote en los top_selling_products y la top_category.
-5. FORMATO:
+5. SI PREGUNTAN POR PROMOCIONES O CÓMO AUMENTAR VENTAS:
+   - Respondé directamente recomendando la promoción sugerida en recommended_promo, con el precio promocional, productos incluidos y el porcentaje de ahorro.
+6. SI PREGUNTAN POR ACTIVAR O REACTIVAR UN PLATO:
+   - Respondé directamente indicando el plato pausado y la posibilidad de reactivarlo en el menú digital.
+7. FORMATO:
    - TODO EN TEXTO PLANO LIMPIO.
    - PROHIBIDO usar asteriscos dobles (NO uses ** en ninguna parte).
    - PROHIBIDO usar asteriscos simples (*).
    - Podés usar guiones (-) o números para listar items.
-6. CERO ALUCINACIÓN:
+8. CERO ALUCINACIÓN:
    - Basate exclusivamente en los datos numéricos provistos en el JSON. No inventes cifras.
 
 DATOS REALES DEL NEGOCIO:
@@ -934,6 +1438,23 @@ def ask_copilot(db: Session, payload: CopilotQuestionPayload) -> CopilotAnswerRe
         data_summary = query_profitable_products(db, date_from, date_to, limit=5)
     elif intent == "underperforming_products":
         data_summary = query_underperforming_products(db, date_from, date_to)
+    elif intent == "promotions_advice":
+        data_summary = query_promotions_advice(db)
+    elif intent == "activate_product":
+        data_summary = query_activate_product(db, term=target_entity)
+    elif intent == "product_price_adjustment":
+        data_summary = query_product_price_adjustment(db, question, term=target_entity)
+    elif intent == "category_price_adjustment":
+        data_summary = query_category_price_adjustment(db, question)
+    elif intent == "toggle_promotion":
+        data_summary = query_toggle_promotion(db, question)
+    elif intent == "shopping_list":
+        data_summary = query_shopping_list(db)
+        cited_period = "Próximos 7 días"
+    elif intent == "compensate_customers":
+        data_summary = query_compensate_customers(db)
+    elif intent == "targeted_promotion":
+        data_summary = query_targeted_promotion(db, question)
     elif intent == "goals":
         data_summary = query_goals_progress(db)
     elif intent == "weekend_purchases":
@@ -941,6 +1462,131 @@ def ask_copilot(db: Session, payload: CopilotQuestionPayload) -> CopilotAnswerRe
         cited_period = "Próximo fin de semana y demanda estimada a 7 días"
     else:  # revenue
         data_summary = query_revenue_and_orders(db, date_from, date_to)
+
+    # Determinar acción sugerida opcional (Human-in-the-Loop)
+    suggested_action: CopilotSuggestedAction | None = None
+    if intent == "underperforming_products":
+        under = data_summary.get("underperforming_products", [])
+        if under and under[0].get("product_id"):
+            worst = under[0]
+            suggested_action = CopilotSuggestedAction(
+                action_type="deactivate_product",
+                title=f"Pausar {worst['product_name']} de la carta",
+                description=f"Ocultar temporalmente '{worst['product_name']}' del menú digital para optimizar la oferta comercial.",
+                button_label="Pausar de la carta",
+                payload={
+                    "product_id": worst["product_id"],
+                    "product_name": worst["product_name"],
+                },
+            )
+    elif intent == "promotions_advice":
+        promo = data_summary.get("recommended_promo")
+        if promo:
+            suggested_action = CopilotSuggestedAction(
+                action_type="create_promotion",
+                title=promo["title"],
+                description=promo["description"],
+                button_label="Crear promoción",
+                payload=promo["payload"],
+            )
+    elif intent == "activate_product":
+        target = data_summary.get("target_product")
+        if target:
+            suggested_action = CopilotSuggestedAction(
+                action_type="activate_product",
+                title=f"Reactivar {target['name']} en la carta",
+                description=f"Hacer visible nuevamente '{target['name']}' para que los clientes puedan pedirlo.",
+                button_label="Reactivar en la carta",
+                payload={
+                    "product_id": target["id"],
+                    "product_name": target["name"],
+                },
+            )
+    elif intent == "product_price_adjustment":
+        if data_summary.get("found"):
+            p_name = data_summary["product_name"]
+            new_pr = data_summary["new_price"]
+            suggested_action = CopilotSuggestedAction(
+                action_type="update_product_price",
+                title=f"Ajustar precio de {p_name}",
+                description=f"Modificar el precio de '{p_name}' a ${new_pr:,.2f}.",
+                button_label="Actualizar precio",
+                payload={
+                    "product_id": data_summary["product_id"],
+                    "product_name": p_name,
+                    "new_price": new_pr,
+                },
+            )
+    elif intent == "category_price_adjustment":
+        if data_summary.get("found") and data_summary.get("product_count", 0) > 0:
+            c_name = data_summary["category_name"]
+            pct = data_summary["percentage"]
+            suggested_action = CopilotSuggestedAction(
+                action_type="update_category_prices",
+                title=f"Aumentar {pct}% a categoría {c_name}",
+                description=f"Actualizar precios de los {data_summary['product_count']} productos de '{c_name}' con un aumento del {pct}%.",
+                button_label="Aplicar aumento",
+                payload={
+                    "category_id": data_summary["category_id"],
+                    "category_name": c_name,
+                    "percentage": pct,
+                },
+            )
+    elif intent == "toggle_promotion":
+        if data_summary.get("found"):
+            p_name = data_summary["promotion_name"]
+            act_lbl = data_summary["action_label"]
+            suggested_action = CopilotSuggestedAction(
+                action_type="toggle_promotion_status",
+                title=f"{act_lbl} promoción '{p_name}'",
+                description=f"{'Ocultar' if not data_summary['target_is_active'] else 'Habilitar nuevamente'} la promoción '{p_name}' en la carta digital.",
+                button_label=f"{act_lbl} promoción",
+                payload={
+                    "promotion_id": data_summary["promotion_id"],
+                    "promotion_name": p_name,
+                    "target_is_active": data_summary["target_is_active"],
+                },
+            )
+    elif intent == "shopping_list":
+        if data_summary.get("count", 0) > 0:
+            suggested_action = CopilotSuggestedAction(
+                action_type="generate_shopping_list",
+                title="Generar lista de compras",
+                description=f"Armar orden de compra consolidada con los {data_summary['count']} insumos proyectados a 7 días (${data_summary['total_estimated_cost']:,.2f}).",
+                button_label="Generar lista",
+                payload={
+                    "items": data_summary["items"],
+                    "total_estimated_cost": data_summary["total_estimated_cost"],
+                },
+            )
+    elif intent == "compensate_customers":
+        c_code = data_summary.get("code", "DISCULPAS-15")
+        c_pct = data_summary.get("discount_percentage", 15)
+        suggested_action = CopilotSuggestedAction(
+            action_type="compensate_customers_coupon",
+            title=f"Crear cupón {c_code} ({c_pct}% OFF)",
+            description=f"Generar el cupón web '{c_code}' con {c_pct}% de descuento para resarcir pedidos cancelados o demoras.",
+            button_label="Crear cupón",
+            payload={
+                "code": c_code,
+                "discount_percentage": c_pct,
+            },
+        )
+    elif intent == "targeted_promotion":
+        if data_summary.get("can_create"):
+            suggested_action = CopilotSuggestedAction(
+                action_type="create_targeted_promotion",
+                title=f"Crear {data_summary['name']}",
+                description=f"Combo dirigido con 20% de descuento (${data_summary['promo_price']:,.2f}) uniendo {data_summary['product_1']} y {data_summary['product_2']}.",
+                button_label="Crear promo dirigida",
+                payload={
+                    "name": data_summary["name"],
+                    "description": f"Promoción dirigida para dinamizar ventas: {data_summary['product_1']} + {data_summary['product_2']} con 20% OFF.",
+                    "price": data_summary["promo_price"],
+                    "is_active": True,
+                    "items": data_summary["items"],
+                },
+            )
 
     # 2. Intentar síntesis con Gemini
     gemini_result = _synthesize_with_gemini(
@@ -958,6 +1604,7 @@ def ask_copilot(db: Session, payload: CopilotQuestionPayload) -> CopilotAnswerRe
             cited_period=cited_period,
             data_summary=data_summary,
             suggested_followups=followups,
+            suggested_action=suggested_action,
             is_fallback=False,
             generated_at=datetime.now(timezone.utc),
         )
@@ -971,6 +1618,248 @@ def ask_copilot(db: Session, payload: CopilotQuestionPayload) -> CopilotAnswerRe
         cited_period=cited_period,
         data_summary=data_summary,
         suggested_followups=det_followups,
+        suggested_action=suggested_action,
         is_fallback=True,
         generated_at=datetime.now(timezone.utc),
     )
+
+
+def execute_copilot_action(
+    db: Session,
+    payload: CopilotActionExecutionPayload,
+) -> CopilotActionExecutionResponse:
+    """Ejecuta una acción comercial aprobada por el administrador generada por el Copilot (Human-in-the-Loop)."""
+    action = payload.action_type
+    p_data = payload.payload or {}
+
+    if action == "deactivate_product":
+        prod_id = p_data.get("product_id")
+        if not prod_id:
+            raise BusinessRuleError("Identificador de producto faltante para pausar.")
+        prod = db.query(Product).filter(Product.id == prod_id).first()
+        if not prod:
+            raise NotFoundError(f"No se encontró el producto con id {prod_id}.")
+        with transaction(db):
+            prod.is_active = False
+        return CopilotActionExecutionResponse(
+            success=True,
+            message=f"El producto '{prod.name}' fue pausado y ya no se muestra en la carta.",
+            executed_action="deactivate_product",
+            affected_entity_id=prod.id,
+        )
+
+    if action == "activate_product":
+        prod_id = p_data.get("product_id")
+        if not prod_id:
+            raise BusinessRuleError("Identificador de producto faltante para reactivar.")
+        prod = db.query(Product).filter(Product.id == prod_id).first()
+        if not prod:
+            raise NotFoundError(f"No se encontró el producto con id {prod_id}.")
+        with transaction(db):
+            prod.is_active = True
+        return CopilotActionExecutionResponse(
+            success=True,
+            message=f"El producto '{prod.name}' fue reactivado y vuelve a estar visible en la carta.",
+            executed_action="activate_product",
+            affected_entity_id=prod.id,
+        )
+
+    if action == "create_promotion":
+        name = p_data.get("name")
+        desc = p_data.get("description")
+        price = p_data.get("price")
+        is_active = p_data.get("is_active", True)
+        raw_items = p_data.get("items", [])
+
+        if not name or price is None or not raw_items:
+            raise BusinessRuleError("Parámetros incompletos para crear la promoción.")
+
+        class _PromoItem:
+            def __init__(self, product_id: int, quantity: int = 1):
+                self.product_id = product_id
+                self.quantity = quantity
+
+        items = [_PromoItem(it["product_id"], it.get("quantity", 1)) for it in raw_items]
+
+        final_name = name
+        counter = 1
+        while promotion_repository.name_taken(db, final_name):
+            counter += 1
+            final_name = f"{name} #{counter}"
+
+        created_promo = promotion_service.create_promotion(
+            db=db,
+            name=final_name,
+            description=desc,
+            price=price,
+            is_active=is_active,
+            items=items,
+        )
+        return CopilotActionExecutionResponse(
+            success=True,
+            message=f"Promoción '{created_promo.name}' creada exitosamente por ${float(created_promo.price):,.2f}.",
+            executed_action="create_promotion",
+            affected_entity_id=created_promo.id,
+        )
+
+    if action == "update_business_goal":
+        period_type = p_data.get("period_type")
+        target_revenue = p_data.get("target_revenue")
+        target_orders = p_data.get("target_orders")
+
+        if not period_type or target_revenue is None or target_orders is None:
+            raise BusinessRuleError("Parámetros incompletos para actualizar la meta comercial.")
+
+        goal_data = analytics_service.BusinessGoalData(
+            period_type=period_type,
+            target_revenue=float(target_revenue),
+            target_orders=int(target_orders),
+        )
+        analytics_service.update_business_goals(db, [goal_data])
+        return CopilotActionExecutionResponse(
+            success=True,
+            message=f"Meta {period_type} actualizada a ${float(target_revenue):,.2f} y {int(target_orders)} pedidos.",
+            executed_action="update_business_goal",
+        )
+
+    if action == "update_product_price":
+        prod_id = p_data.get("product_id")
+        new_price = p_data.get("new_price")
+        if not prod_id or new_price is None:
+            raise BusinessRuleError("Parámetros incompletos para actualizar el precio del producto.")
+        prod = db.query(Product).filter(Product.id == prod_id).first()
+        if not prod:
+            raise NotFoundError(f"No se encontró el producto con id {prod_id}.")
+        with transaction(db):
+            prod.price = round(float(new_price), 2)
+        return CopilotActionExecutionResponse(
+            success=True,
+            message=f"Precio de '{prod.name}' actualizado correctamente a ${float(new_price):,.2f}.",
+            executed_action="update_product_price",
+            affected_entity_id=prod.id,
+        )
+
+    if action == "update_category_prices":
+        cat_id = p_data.get("category_id")
+        pct = p_data.get("percentage") if p_data.get("percentage") is not None else p_data.get("percentage_increase")
+        if not cat_id or pct is None:
+            raise BusinessRuleError("Parámetros incompletos para actualizar los precios por categoría.")
+        cat = db.query(Category).filter(Category.id == cat_id).first()
+        if not cat:
+            raise NotFoundError(f"No se encontró la categoría con id {cat_id}.")
+        prods = db.query(Product).filter(
+            Product.category_id == cat_id,
+            Product.is_active.is_(True),
+            Product.is_archived.is_(False),
+        ).all()
+        with transaction(db):
+            for p in prods:
+                p.price = round(float(p.price) * (1 + float(pct) / 100.0), 2)
+        return CopilotActionExecutionResponse(
+            success=True,
+            message=f"Se aplicó un aumento del {pct}% a los {len(prods)} productos de la categoría '{cat.name}'.",
+            executed_action="update_category_prices",
+            affected_entity_id=cat.id,
+        )
+
+    if action == "toggle_promotion_status":
+        promo_id = p_data.get("promotion_id")
+        target_is_active = p_data.get("target_is_active") if p_data.get("target_is_active") is not None else (p_data.get("activate") if p_data.get("activate") is not None else p_data.get("is_active"))
+        if not promo_id or target_is_active is None:
+            raise BusinessRuleError("Parámetros incompletos para modificar el estado de la promoción.")
+        promo = db.query(Promotion).filter(Promotion.id == promo_id).first()
+        if not promo:
+            raise NotFoundError(f"No se encontró la promoción con id {promo_id}.")
+        with transaction(db):
+            promo.is_active = bool(target_is_active)
+        status_txt = "reactivada y visible en la carta" if target_is_active else "pausada correctamente"
+        return CopilotActionExecutionResponse(
+            success=True,
+            message=f"Promoción '{promo.name}' {status_txt}.",
+            executed_action="toggle_promotion_status",
+            affected_entity_id=promo.id,
+        )
+
+    if action == "generate_shopping_list":
+        items = p_data.get("items", [])
+        tot = p_data.get("total_estimated_cost", 0.0)
+        lines = ["🛒 ORDEN DE COMPRA SUGERIDA (PRÓXIMOS 7 DÍAS):"]
+        for it in items:
+            lines.append(f"• {it['name']}: {it['quantity']} {it['unit']} (~${float(it['cost']):,.2f})")
+        lines.append(f"\nTotal estimado: ${float(tot):,.2f}")
+        return CopilotActionExecutionResponse(
+            success=True,
+            message="\n".join(lines),
+            executed_action="generate_shopping_list",
+        )
+
+    if action == "compensate_customers_coupon":
+        code = (p_data.get("code") or p_data.get("coupon_code") or "DISCULPAS-15").strip().upper()
+        discount_pct = int(p_data.get("discount_percentage", 15))
+        existing = coupon_repository.get_by_code(db, code)
+        if existing:
+            with transaction(db):
+                existing.is_active = True
+                existing.discount_percentage = discount_pct
+            c_id = existing.id
+        else:
+            created_coupon = coupon_service.create_coupon(
+                db, CouponCreate(code=code, discount_percentage=discount_pct, is_active=True)
+            )
+            c_id = created_coupon.id
+        return CopilotActionExecutionResponse(
+            success=True,
+            message=f"Cupón web '{code}' creado con {discount_pct}% de descuento para compensar clientes.",
+            executed_action="compensate_customers_coupon",
+            affected_entity_id=c_id,
+        )
+
+    if action == "create_targeted_promotion":
+        name = p_data.get("name") or "Promoción Especial Dirigida"
+        desc = p_data.get("description")
+        price = p_data.get("price") if p_data.get("price") is not None else p_data.get("promo_price")
+        is_active = p_data.get("is_active", True)
+        raw_items = p_data.get("items", [])
+        if not raw_items:
+            active_prods = db.query(Product).filter(
+                Product.is_active.is_(True),
+                Product.is_archived.is_(False),
+            ).limit(2).all()
+            if active_prods:
+                raw_items = [{"product_id": p.id, "quantity": 1} for p in active_prods]
+                if price is None:
+                    discount_pct = float(p_data.get("discount_percent") or p_data.get("discount_pct") or 20)
+                    sum_price = sum(float(p.price) for p in active_prods)
+                    price = round(sum_price * (1 - discount_pct / 100.0), 2)
+        if not name or price is None or not raw_items:
+            raise BusinessRuleError("Parámetros incompletos para crear la promoción dirigida.")
+
+        class _PromoItem:
+            def __init__(self, product_id: int, quantity: int = 1):
+                self.product_id = product_id
+                self.quantity = quantity
+
+        items = [_PromoItem(it["product_id"], it.get("quantity", 1)) for it in raw_items]
+        final_name = name
+        counter = 1
+        while promotion_repository.name_taken(db, final_name):
+            counter += 1
+            final_name = f"{name} #{counter}"
+
+        created_promo = promotion_service.create_promotion(
+            db=db,
+            name=final_name,
+            description=desc,
+            price=price,
+            is_active=is_active,
+            items=items,
+        )
+        return CopilotActionExecutionResponse(
+            success=True,
+            message=f"Promoción dirigida '{created_promo.name}' creada exitosamente por ${float(created_promo.price):,.2f}.",
+            executed_action="create_targeted_promotion",
+            affected_entity_id=created_promo.id,
+        )
+
+    raise BusinessRuleError(f"Tipo de acción '{action}' no soportado.")
+

@@ -58,6 +58,11 @@ export function PredictiveAnalyticsTab({ refreshKey }: PredictiveAnalyticsTabPro
     );
   }
 
+  const peakDay =
+    data && data.days.length > 0
+      ? [...data.days].sort((a, b) => b.projected_revenue - a.projected_revenue)[0]
+      : null;
+
   return (
     <div className="flex flex-col gap-6">
       {data.disclaimer && (
@@ -66,30 +71,48 @@ export function PredictiveAnalyticsTab({ refreshKey }: PredictiveAnalyticsTabPro
         </div>
       )}
 
-      {/* KPI Cards de Proyección */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-5 rounded-2xl shadow-xs border border-gray-100 flex flex-col justify-between border-l-4 border-l-purple-500">
-          <span className="text-xs font-semibold text-purple-700 uppercase tracking-wider">Total Próximos 7 Días</span>
+      {/* KPI Cards de Proyección: Orden solicitado: total 7 días, promedio diario, día con más ventas (único en violeta), días de semana, fin de semana */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+        {/* 1. Total Próximos 7 Días */}
+        <div className="bg-white p-5 rounded-2xl shadow-xs border border-gray-100 flex flex-col justify-between">
+          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Próximos 7 Días</span>
           <div className="mt-2 text-2xl font-black text-gray-900">{formatCurrency(data.total_projected_revenue)}</div>
-          <span className="text-xs font-semibold text-purple-700 mt-1">{data.total_projected_orders} pedidos estimados</span>
+          <span className="text-xs font-medium text-gray-500 mt-1">{data.total_projected_orders} pedidos estimados</span>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl shadow-xs border border-gray-100 flex flex-col justify-between border-l-4 border-l-purple-500">
-          <span className="text-xs font-semibold text-purple-700 uppercase tracking-wider">Fin de Semana</span>
-          <div className="mt-2 text-2xl font-black text-gray-900">{formatCurrency(data.weekend_projected_revenue)}</div>
-          <span className="text-xs font-semibold text-purple-700 mt-1">{data.weekend_projected_orders} pedidos estimados</span>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl shadow-xs border border-gray-100 flex flex-col justify-between border-l-4 border-l-purple-500">
-          <span className="text-xs font-semibold text-purple-700 uppercase tracking-wider">Días de Semana</span>
-          <div className="mt-2 text-2xl font-black text-gray-900">{formatCurrency(data.weekday_projected_revenue)}</div>
-          <span className="text-xs font-semibold text-purple-700 mt-1">{data.weekday_projected_orders} pedidos estimados</span>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl shadow-xs border border-gray-100 flex flex-col justify-between border-l-4 border-l-purple-500">
-          <span className="text-xs font-semibold text-purple-700 uppercase tracking-wider">Promedio Diario</span>
+        {/* 2. Promedio Diario */}
+        <div className="bg-white p-5 rounded-2xl shadow-xs border border-gray-100 flex flex-col justify-between">
+          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Promedio Diario</span>
           <div className="mt-2 text-2xl font-black text-gray-900">{formatCurrency(data.avg_daily_revenue)}</div>
-          <span className="text-xs font-semibold text-purple-700 mt-1">{data.avg_daily_orders} pedidos / día</span>
+          <span className="text-xs font-medium text-gray-500 mt-1">{data.avg_daily_orders} pedidos / día</span>
+        </div>
+
+        {/* 3. Día con Más Ventas (único en violeta, fondo blanco) */}
+        <div className="bg-white p-5 rounded-2xl shadow-xs border border-purple-200 flex flex-col justify-between border-l-4 border-l-purple-600">
+          <span className="text-xs font-semibold text-purple-700 uppercase tracking-wider">Día con Más Ventas</span>
+          <div className="mt-2">
+            <div className="text-2xl font-black text-purple-950">{peakDay?.day_name ?? 'Sin datos'}</div>
+            <div className="text-xs font-semibold text-purple-700 mt-0.5">
+              {formatCurrency(peakDay?.projected_revenue ?? 0)}
+            </div>
+          </div>
+          <span className="text-xs font-medium text-purple-600 mt-1">
+            {peakDay?.projected_orders ?? 0} pedidos estimados
+          </span>
+        </div>
+
+        {/* 4. Días de Semana */}
+        <div className="bg-white p-5 rounded-2xl shadow-xs border border-gray-100 flex flex-col justify-between">
+          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Días de Semana</span>
+          <div className="mt-2 text-2xl font-black text-gray-900">{formatCurrency(data.weekday_projected_revenue)}</div>
+          <span className="text-xs font-medium text-gray-500 mt-1">{data.weekday_projected_orders} pedidos estimados</span>
+        </div>
+
+        {/* 5. Fin de Semana */}
+        <div className="bg-white p-5 rounded-2xl shadow-xs border border-gray-100 flex flex-col justify-between">
+          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Fin de Semana</span>
+          <div className="mt-2 text-2xl font-black text-gray-900">{formatCurrency(data.weekend_projected_revenue)}</div>
+          <span className="text-xs font-medium text-gray-500 mt-1">{data.weekend_projected_orders} pedidos estimados</span>
         </div>
       </div>
 
@@ -118,10 +141,10 @@ export function PredictiveAnalyticsTab({ refreshKey }: PredictiveAnalyticsTabPro
               </div>
 
               <div className="mt-3">
-                <span className="text-sm font-black text-purple-700 block">
+                <span className="text-sm font-semibold text-purple-700 block">
                   {formatCurrency(day.projected_orders === 0 ? 0 : day.projected_revenue)}
                 </span>
-                <span className="text-xs font-medium text-gray-600">{day.projected_orders} pedidos</span>
+                <span className="text-xs font-semibold text-gray-600">{day.projected_orders} pedidos</span>
               </div>
             </div>
           ))}

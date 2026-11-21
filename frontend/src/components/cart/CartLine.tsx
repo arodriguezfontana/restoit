@@ -101,7 +101,7 @@ export function CartLine({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
             {isPromo && (
-              <span className="text-[10px] font-bold uppercase bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">
+              <span className="text-[10px] font-bold uppercase bg-purple-100 text-purple-700 border border-purple-200 px-1.5 py-0.5 rounded">
                 Promo
               </span>
             )}

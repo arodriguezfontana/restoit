@@ -2,6 +2,7 @@ import { api } from './api';
 import type {
   BestSellingDayResponse,
   BusinessGoalsResponse,
+  CopilotActionExecutionResponse,
   CopilotAnswerResponse,
   DashboardKPIsResponse,
   PredictionsResponse,
@@ -89,4 +90,16 @@ export async function askCopilot(
   });
   return data;
 }
+
+export async function executeCopilotAction(
+  actionType: string,
+  payload: Record<string, unknown>
+): Promise<CopilotActionExecutionResponse> {
+  const { data } = await api.post<CopilotActionExecutionResponse>('/stats/copilot/execute-action', {
+    action_type: actionType,
+    payload,
+  });
+  return data;
+}
+
 

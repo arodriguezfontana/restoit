@@ -7,7 +7,7 @@ import { BusinessGoalsModal } from '@/components/BusinessGoalsModal';
 import { StrategicInsightModal } from '@/components/StrategicInsightModal';
 import { fetchStrategicInsight } from '@/services/statsService';
 import type { StrategicInsightResponse } from '@/types/stats';
-import { SparklesIcon } from '@/components/Icons';
+import { RefreshIcon, SparklesIcon } from '@/components/Icons';
 
 import { AiAdviceSection } from '@/components/stats/AiAdviceSection';
 import { GoalsProgress } from '@/components/stats/GoalsProgress';
@@ -156,9 +156,10 @@ export function StatsSection() {
             <button
               type="button"
               onClick={() => setPredictionsRefreshKey((k) => k + 1)}
-              className="rounded-xl border border-gray-300 hover:bg-gray-50 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 transition shadow-2xs cursor-pointer"
+              className="rounded-xl border border-gray-300 hover:bg-gray-50 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 transition shadow-2xs cursor-pointer flex items-center gap-1.5"
             >
-              Actualizar pronóstico
+              <RefreshIcon className="w-3.5 h-3.5 text-gray-500" />
+              <span>Actualizar pronóstico</span>
             </button>
           )}
         </div>

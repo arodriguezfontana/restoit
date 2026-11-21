@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { askCopilot } from '@/services/statsService';
+import { askCopilot, executeCopilotAction } from '@/services/statsService';
 import type { CopilotChatMessage } from '@/types/stats';
-import { SparklesIcon } from '@/components/Icons';
+import { BoltIcon, SparklesIcon } from '@/components/Icons';
 
 interface CopilotDrawerProps {
   isOpen: boolean;
@@ -72,6 +72,8 @@ export function CopilotDrawer({ isOpen, onClose }: CopilotDrawerProps) {
         cited_period: response.cited_period,
         data_summary: response.data_summary ?? undefined,
         suggested_followups: response.suggested_followups,
+        suggested_action: response.suggested_action ?? undefined,
+        action_status: 'idle',
         is_fallback: response.is_fallback,
       };
 
@@ -81,6 +83,53 @@ export function CopilotDrawer({ isOpen, onClose }: CopilotDrawerProps) {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleExecuteAction = async (msgIndex: number) => {
+    const msg = messages[msgIndex];
+    if (!msg || !msg.suggested_action || msg.action_status === 'executing') return;
+
+    setMessages((prev) =>
+      prev.map((m, idx) => (idx === msgIndex ? { ...m, action_status: 'executing' } : m))
+    );
+
+    try {
+      const res = await executeCopilotAction(
+        msg.suggested_action.action_type,
+        msg.suggested_action.payload
+      );
+      setMessages((prev) =>
+        prev.map((m, idx) =>
+          idx === msgIndex
+            ? {
+                ...m,
+                action_status: 'executed',
+                action_result_message: res.message,
+              }
+            : m
+        )
+      );
+    } catch (err: unknown) {
+      const errMsg =
+        err instanceof Error ? err.message : 'No se pudo ejecutar la acción. Intentá nuevamente.';
+      setMessages((prev) =>
+        prev.map((m, idx) =>
+          idx === msgIndex
+            ? {
+                ...m,
+                action_status: 'idle',
+                action_result_message: errMsg,
+              }
+            : m
+        )
+      );
+    }
+  };
+
+  const handleDiscardAction = (msgIndex: number) => {
+    setMessages((prev) =>
+      prev.map((m, idx) => (idx === msgIndex ? { ...m, action_status: 'discarded' } : m))
+    );
   };
 
   return (
@@ -148,6 +197,53 @@ export function CopilotDrawer({ isOpen, onClose }: CopilotDrawerProps) {
                         Modo directo
                       </span>
                     )}
+                  </div>
+                )}
+
+                {/* Acción sugerida opcional (Human-in-the-Loop) */}
+                {msg.suggested_action && (
+                  <div className="mt-2.5 pt-2 border-t border-gray-100">
+                    <div className="rounded-xl border border-emerald-200/90 bg-emerald-50/60 p-2.5 space-y-1.5 text-left">
+                      <div className="flex items-center gap-1.5 text-emerald-900 font-bold text-[11px]">
+                        <BoltIcon className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                        <span>{msg.suggested_action.title}</span>
+                      </div>
+                      <p className="text-[11px] text-gray-700 leading-snug">
+                        {msg.suggested_action.description}
+                      </p>
+
+                      {msg.action_status === 'executed' ? (
+                        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-800 bg-emerald-100/80 rounded-lg px-2 py-1 mt-1">
+                          <span>✓</span>
+                          <span>{msg.action_result_message || 'Acción ejecutada con éxito'}</span>
+                        </div>
+                      ) : msg.action_status === 'discarded' ? (
+                        <div className="text-[11px] font-medium text-gray-500 italic bg-gray-100 rounded-lg px-2 py-1 mt-1">
+                          Acción descartada
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => handleExecuteAction(index)}
+                            disabled={msg.action_status === 'executing'}
+                            className="bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-lg px-3 py-1 font-semibold text-[11px] shadow-xs transition disabled:opacity-50"
+                          >
+                            {msg.action_status === 'executing'
+                              ? 'Ejecutando...'
+                              : msg.suggested_action.button_label}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDiscardAction(index)}
+                            disabled={msg.action_status === 'executing'}
+                            className="bg-gray-200 hover:bg-gray-300 active:scale-95 text-gray-700 rounded-lg px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50"
+                          >
+                            Descartar
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>

@@ -143,12 +143,30 @@ export interface PredictionsResponse {
   generated_at: string;
 }
 
+export interface CopilotSuggestedAction {
+  action_type: string;
+  title: string;
+  description: string;
+  button_label: string;
+  payload: Record<string, unknown>;
+}
+
+export interface CopilotActionExecutionResponse {
+  success: boolean;
+  message: string;
+  executed_action: string;
+  affected_entity_id?: number | null;
+}
+
 export interface CopilotChatMessage {
   role: 'user' | 'assistant';
   content: string;
   cited_period?: string;
   data_summary?: Record<string, unknown>;
   suggested_followups?: string[];
+  suggested_action?: CopilotSuggestedAction | null;
+  action_status?: 'idle' | 'executing' | 'executed' | 'discarded';
+  action_result_message?: string;
   is_fallback?: boolean;
 }
 
@@ -157,6 +175,7 @@ export interface CopilotAnswerResponse {
   cited_period: string;
   data_summary?: Record<string, unknown> | null;
   suggested_followups?: string[];
+  suggested_action?: CopilotSuggestedAction | null;
   is_fallback: boolean;
   generated_at: string;
 }

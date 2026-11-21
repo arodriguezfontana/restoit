@@ -319,3 +319,65 @@ def test_copilot_responde_me_conviene_comprar_insumo(client, db_session, setup_m
     assert "conviene comprar" in data["answer"].lower()
     assert "Muzzarella Barra" in data["answer"]
     assert data["data_summary"]["ingredient_name"] == "Muzzarella Barra"
+    # Consultas puramente informativas no deben forzar acciones sugeridas
+    assert data["suggested_action"] is None
+
+
+def test_copilot_sugiere_y_ejecuta_pausar_producto(client, db_session, setup_menu_and_recipes):
+    muzza = setup_menu_and_recipes["muzza"]
+    fugazza = setup_menu_and_recipes["fugazza"]
+    # Muzza tiene ventas, Fugazza tiene cero ventas
+    _order(db_session, status="Finalizado", created_at=AYER, items=[(muzza, 5)], total=40000)
+
+    # Preguntar qué producto eliminar/reemplazar
+    resp = client.post(
+        f"{STATS_URL}/copilot/ask",
+        json={"question": "qué producto podría eliminar y por qué cambiarlo?"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    action = data.get("suggested_action")
+    assert action is not None
+    assert action["action_type"] == "deactivate_product"
+    assert action["payload"]["product_id"] == fugazza.id
+    assert "Pausar" in action["button_label"]
+
+    # Ejecutar la acción aprobada por el admin
+    exec_resp = client.post(
+        f"{STATS_URL}/copilot/execute-action",
+        json={"action_type": action["action_type"], "payload": action["payload"]},
+    )
+    assert exec_resp.status_code == 200
+    exec_data = exec_resp.json()
+    assert exec_data["success"] is True
+    assert exec_data["executed_action"] == "deactivate_product"
+
+    # Verificar que el producto quedó inactivo en base de datos
+    db_session.refresh(fugazza)
+    assert fugazza.is_active is False
+
+
+def test_copilot_sugiere_y_ejecuta_crear_promocion(client, db_session, setup_menu_and_recipes):
+    resp = client.post(
+        f"{STATS_URL}/copilot/ask",
+        json={"question": "¿qué promoción me recomendás crear para aumentar las ventas?"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    action = data.get("suggested_action")
+    assert action is not None
+    assert action["action_type"] == "create_promotion"
+    assert "items" in action["payload"]
+    assert len(action["payload"]["items"]) >= 2
+
+    # Ejecutar creación de promo
+    exec_resp = client.post(
+        f"{STATS_URL}/copilot/execute-action",
+        json={"action_type": action["action_type"], "payload": action["payload"]},
+    )
+    assert exec_resp.status_code == 200
+    exec_data = exec_resp.json()
+    assert exec_data["success"] is True
+    assert exec_data["executed_action"] == "create_promotion"
+    assert exec_data["affected_entity_id"] is not None
+

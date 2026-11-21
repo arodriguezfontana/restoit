@@ -490,19 +490,18 @@ describe('CategoriasView', () => {
   });
 
   it('elimina una categoría después de confirmar', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
     catalog.deleteCategory.mockResolvedValue();
     render(<CategoriasView />);
     const user = userEvent.setup();
     await screen.findByText('Pizzas', { selector: 'td > p' });
 
     await user.click(screen.getByRole('button', { name: 'Eliminar Pizzas' }));
+    expect(screen.getByText('¿Eliminar?')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'No' }));
     expect(catalog.deleteCategory).not.toHaveBeenCalled();
-    expect(confirm).toHaveBeenCalledWith(
-      '¿Eliminar la categoría "Pizzas"? Su producto quedará sin categoría y no se mostrará en el menú.'
-    );
 
     await user.click(screen.getByRole('button', { name: 'Eliminar Pizzas' }));
+    await user.click(screen.getByRole('button', { name: 'Sí' }));
     expect(catalog.deleteCategory).toHaveBeenCalledWith(1);
     expect(await screen.findByText('Se eliminó la categoría Pizzas.')).toBeInTheDocument();
   });

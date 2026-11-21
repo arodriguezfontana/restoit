@@ -171,8 +171,10 @@ describe('US-67: Inteligencia de Negocio con Analítica Predictiva y Copilot Q&A
 
     expect(await screen.findByRole('button', { name: /Actualizar pronóstico/i })).toBeInTheDocument();
     expect(screen.getByText('Total Próximos 7 Días')).toBeInTheDocument();
-    expect(screen.getByText('Fin de Semana')).toBeInTheDocument();
+    expect(screen.getByText('Promedio Diario')).toBeInTheDocument();
+    expect(screen.getByText('Día con Más Ventas')).toBeInTheDocument();
     expect(screen.getByText('Días de Semana')).toBeInTheDocument();
+    expect(screen.getByText('Fin de Semana')).toBeInTheDocument();
     expect(screen.getByText('Demanda Proyectada de Insumos Principales')).toBeInTheDocument();
   });
 
@@ -234,6 +236,97 @@ describe('US-67: Inteligencia de Negocio con Analítica Predictiva y Copilot Q&A
 
     expect(await screen.findByText('En los últimos 30 días se registraron 2 cancelaciones.')).toBeInTheDocument();
     expect(screen.getByText('Modo directo')).toBeInTheDocument();
+  });
+
+  it('el Asistente muestra tarjeta de acción sugerida y permite ejecutarla o descartarla', async () => {
+    stats.askCopilot.mockResolvedValueOnce({
+      answer: 'Podrías considerar pausar Pizza Fugazzeta por baja rotación.',
+      cited_period: 'Últimos 30 días',
+      is_fallback: false,
+      suggested_followups: [],
+      suggested_action: {
+        action_type: 'deactivate_product',
+        title: 'Pausar Pizza Fugazzeta de la carta',
+        description: 'Ocultar temporalmente del menú digital.',
+        button_label: 'Pausar de la carta',
+        payload: { product_id: 2, product_name: 'Pizza Fugazzeta' },
+      },
+      generated_at: '2026-11-21T02:00:00Z',
+    });
+    stats.executeCopilotAction.mockResolvedValueOnce({
+      success: true,
+      message: "El producto 'Pizza Fugazzeta' fue pausado correctamente.",
+      executed_action: 'deactivate_product',
+      affected_entity_id: 2,
+    });
+
+    render(<StatsSection />);
+    const user = userEvent.setup();
+
+    const assistantBtn = screen.getByRole('button', { name: /Asistente Q&A/i });
+    await user.click(assistantBtn);
+
+    const input = screen.getByPlaceholderText(/Hacé una pregunta sobre tu negocio/i);
+    await user.type(input, 'qué producto eliminar?');
+
+    const sendBtn = screen.getByRole('button', { name: 'Enviar' });
+    await user.click(sendBtn);
+
+    // Aparece la tarjeta de acción sugerida
+    expect(await screen.findByText('Pausar Pizza Fugazzeta de la carta')).toBeInTheDocument();
+    expect(screen.getByText('Ocultar temporalmente del menú digital.')).toBeInTheDocument();
+    const actionBtn = screen.getByRole('button', { name: 'Pausar de la carta' });
+    const discardBtn = screen.getByRole('button', { name: 'Descartar' });
+    expect(actionBtn).toBeInTheDocument();
+    expect(discardBtn).toBeInTheDocument();
+
+    // Ejecutar acción
+    await user.click(actionBtn);
+    await waitFor(() => {
+      expect(stats.executeCopilotAction).toHaveBeenCalledWith('deactivate_product', {
+        product_id: 2,
+        product_name: 'Pizza Fugazzeta',
+      });
+    });
+
+    // Muestra confirmación de ejecución
+    expect(await screen.findByText(/El producto 'Pizza Fugazzeta' fue pausado correctamente/i)).toBeInTheDocument();
+  });
+
+  it('el Asistente permite descartar una acción sugerida', async () => {
+    stats.askCopilot.mockResolvedValueOnce({
+      answer: 'Te recomiendo crear una promo.',
+      cited_period: 'Últimos 30 días',
+      is_fallback: false,
+      suggested_followups: [],
+      suggested_action: {
+        action_type: 'create_promotion',
+        title: 'Crear Promo Fin de Semana',
+        description: 'Combo especial con 15% de descuento.',
+        button_label: 'Crear promoción',
+        payload: { name: 'Promo Fin de Semana', price: 15000 },
+      },
+      generated_at: '2026-11-21T02:00:00Z',
+    });
+
+    render(<StatsSection />);
+    const user = userEvent.setup();
+
+    const assistantBtn = screen.getByRole('button', { name: /Asistente Q&A/i });
+    await user.click(assistantBtn);
+
+    const input = screen.getByPlaceholderText(/Hacé una pregunta sobre tu negocio/i);
+    await user.type(input, 'qué promo armar?');
+
+    const sendBtn = screen.getByRole('button', { name: 'Enviar' });
+    await user.click(sendBtn);
+
+    expect(await screen.findByText('Crear Promo Fin de Semana')).toBeInTheDocument();
+    const discardBtn = screen.getByRole('button', { name: 'Descartar' });
+    await user.click(discardBtn);
+
+    expect(await screen.findByText('Acción descartada')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Crear promoción' })).not.toBeInTheDocument();
   });
 
   it('la sección predictiva muestra degradación controlada y opción de reintentar si el servicio falla', async () => {

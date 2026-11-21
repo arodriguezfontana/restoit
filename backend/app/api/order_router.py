@@ -84,7 +84,11 @@ def create_order_from_web(
     """
     try:
         order = order_service.create_web_order(
-            db, payload.to_request(), user=current_user, payment_method=payload.payment_method
+            db,
+            payload.to_request(),
+            user=current_user,
+            payment_method=payload.payment_method,
+            coupon_code=payload.coupon_code,
         )
         payment_url = None
         if order.payment_method == PaymentMethod.MERCADOPAGO.value:

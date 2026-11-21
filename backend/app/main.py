@@ -14,6 +14,7 @@ from app.api import (
     category_router,
     chat_router,
     client_router,
+    coupon_router,
     customer_router,
     delay_rule_router,
     delivery_driver_router,
@@ -92,6 +93,7 @@ api_router.include_router(cash_shift_router.router, prefix="/cash-shifts", tags=
 api_router.include_router(category_router.router, prefix="/categories", tags=["Categories"])
 api_router.include_router(chat_router.router, prefix="/chat", tags=["Chatbot"])
 api_router.include_router(client_router.router, prefix="/clients", tags=["Clients"])
+api_router.include_router(coupon_router.router, prefix="/coupons", tags=["Coupons"])
 api_router.include_router(customer_router.router, prefix="/customers", tags=["Customers"])
 api_router.include_router(delay_rule_router.router, prefix="/delay-settings", tags=["Delay settings"])
 api_router.include_router(delivery_driver_router.router, prefix="/delivery-drivers", tags=["Delivery Drivers"])

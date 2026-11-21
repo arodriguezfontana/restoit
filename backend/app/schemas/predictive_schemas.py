@@ -60,10 +60,31 @@ class CopilotQuestionPayload(BaseModel):
     conversation_history: list[ConversationMessage] | None = None
 
 
+class CopilotSuggestedAction(BaseModel):
+    action_type: str = Field(..., description="Tipo de acción: 'deactivate_product', 'activate_product', 'create_promotion'")
+    title: str = Field(..., description="Título de la tarjeta de acción")
+    description: str = Field(..., description="Descripción breve de lo que hará la acción")
+    button_label: str = Field(..., description="Texto del botón de confirmación")
+    payload: dict[str, Any] = Field(default_factory=dict, description="Parámetros requeridos para ejecutar la acción")
+
+
+class CopilotActionExecutionPayload(BaseModel):
+    action_type: str = Field(..., description="Tipo de acción a ejecutar")
+    payload: dict[str, Any] = Field(default_factory=dict, description="Parámetros de la acción")
+
+
+class CopilotActionExecutionResponse(BaseModel):
+    success: bool
+    message: str
+    executed_action: str
+    affected_entity_id: int | None = None
+
+
 class CopilotAnswerResponse(BaseModel):
     answer: str = Field(..., description="Respuesta concisa y fundamentada en datos reales")
     cited_period: str = Field(..., description="Período de tiempo consultado citado explícitamente")
     data_summary: dict[str, Any] | None = Field(default=None, description="Datos cuantitativos reales consultados")
     suggested_followups: list[str] = Field(default_factory=list)
+    suggested_action: CopilotSuggestedAction | None = Field(default=None, description="Acción sugerida opcional que el usuario puede elegir ejecutar")
     is_fallback: bool = Field(default=False, description="Indica si se usó motor determinístico por degradación de IA")
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

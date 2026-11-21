@@ -13,7 +13,13 @@ from app.schemas.analytics_schemas import (
     UpdateBusinessGoalsPayload,
 )
 from app.schemas.ingredient_schemas import IngredientConsumptionResponse
-from app.schemas.predictive_schemas import CopilotAnswerResponse, CopilotQuestionPayload, PredictionsResponse
+from app.schemas.predictive_schemas import (
+    CopilotActionExecutionPayload,
+    CopilotActionExecutionResponse,
+    CopilotAnswerResponse,
+    CopilotQuestionPayload,
+    PredictionsResponse,
+)
 from app.schemas.stats_schemas import BestSellingDayResponse, StatusDistributionResponse, TopProductResponse
 from app.services import analytics_service, copilot_service, predictive_service, stats_service
 from app.services.ingredient_service import ingredient_consumption
@@ -149,3 +155,13 @@ def ask_copilot(
     la base de datos real con cero alucinaciones numéricas y citando el período consultado.
     """
     return copilot_service.ask_copilot(db, payload)
+
+
+@router.post("/copilot/execute-action", dependencies=[Depends(get_current_admin)])
+def execute_copilot_action(
+    payload: CopilotActionExecutionPayload,
+    db: Session = Depends(get_db),
+) -> CopilotActionExecutionResponse:
+    """Ejecuta una acción comercial aprobada por el administrador generada por el Copilot (Human-in-the-Loop)."""
+    return copilot_service.execute_copilot_action(db, payload)
+

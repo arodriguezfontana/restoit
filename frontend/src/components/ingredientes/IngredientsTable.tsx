@@ -46,7 +46,21 @@ function EditRow({ ingredient, draft, saving, onDraftChange, onSave, onCancel }:
   );
 }
 
-function ReadRow({ ingredient, onEdit, onDelete }: { ingredient: Ingredient; onEdit: () => void; onDelete: () => void }) {
+function ReadRow({
+  ingredient,
+  confirmingDelete,
+  onEdit,
+  onAskDelete,
+  onCancelDelete,
+  onConfirmDelete,
+}: {
+  ingredient: Ingredient;
+  confirmingDelete?: boolean;
+  onEdit: () => void;
+  onAskDelete: () => void;
+  onCancelDelete: () => void;
+  onConfirmDelete: () => void;
+}) {
   return (
     <tr className="hover:bg-gray-50/50">
       <td className="py-3 px-5 font-semibold text-gray-900">{ingredient.name}</td>
@@ -57,22 +71,44 @@ function ReadRow({ ingredient, onEdit, onDelete }: { ingredient: Ingredient; onE
         {ingredient.products_count === 1 ? '1 producto' : `${ingredient.products_count} productos`}
       </td>
       <td className="py-3 px-5 text-right whitespace-nowrap space-x-2">
-        <button
-          type="button"
-          onClick={onEdit}
-          aria-label={`Editar ${ingredient.name}`}
-          className="text-xs font-semibold rounded-lg px-3 py-1.5 text-gray-700 hover:bg-gray-200"
-        >
-          Editar
-        </button>
-        <button
-          type="button"
-          onClick={onDelete}
-          aria-label={`Eliminar ${ingredient.name}`}
-          className="text-xs font-semibold rounded-lg px-3 py-1.5 text-red-600 hover:bg-red-50"
-        >
-          Eliminar
-        </button>
+        {confirmingDelete ? (
+          <span className="inline-flex items-center gap-1.5 text-xs">
+            <span className="text-red-600 font-semibold text-xs">¿Eliminar?</span>
+            <button
+              type="button"
+              onClick={onConfirmDelete}
+              className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold text-xs transition"
+            >
+              Sí
+            </button>
+            <button
+              type="button"
+              onClick={onCancelDelete}
+              className="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-semibold text-xs transition"
+            >
+              No
+            </button>
+          </span>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={onEdit}
+              aria-label={`Editar ${ingredient.name}`}
+              className="text-xs font-semibold rounded-lg px-3 py-1.5 text-gray-700 hover:bg-gray-200"
+            >
+              Editar
+            </button>
+            <button
+              type="button"
+              onClick={onAskDelete}
+              aria-label={`Eliminar ${ingredient.name}`}
+              className="text-xs font-semibold rounded-lg px-3 py-1.5 text-red-600 hover:bg-red-50"
+            >
+              Eliminar
+            </button>
+          </>
+        )}
       </td>
     </tr>
   );
@@ -81,13 +117,17 @@ function ReadRow({ ingredient, onEdit, onDelete }: { ingredient: Ingredient; onE
 interface IngredientsTableProps {
   ingredients: Ingredient[];
   editingId: number | null;
+  deletingId?: number | null;
   draft: IngredientPayload;
   savingEdit: boolean;
   onDraftChange: (draft: IngredientPayload) => void;
   onStartEditing: (ingredient: Ingredient) => void;
   onSaveEdit: (id: number) => void;
   onCancelEdit: () => void;
-  onDelete: (ingredient: Ingredient) => void;
+  onAskDelete: (ingredient: Ingredient) => void;
+  onCancelDelete: () => void;
+  onConfirmDelete: (ingredient: Ingredient) => void;
+  onDelete?: (ingredient: Ingredient) => void;
 }
 
 /** Los ingredientes del local; el que se está editando se muestra con sus campos. */
@@ -121,8 +161,11 @@ export function IngredientsTable(props: IngredientsTableProps) {
               <ReadRow
                 key={ingredient.id}
                 ingredient={ingredient}
+                confirmingDelete={props.deletingId === ingredient.id}
                 onEdit={() => props.onStartEditing(ingredient)}
-                onDelete={() => props.onDelete(ingredient)}
+                onAskDelete={() => props.onAskDelete(ingredient)}
+                onCancelDelete={props.onCancelDelete}
+                onConfirmDelete={() => props.onConfirmDelete(ingredient)}
               />
             )
           )}

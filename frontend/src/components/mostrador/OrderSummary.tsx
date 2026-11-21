@@ -53,12 +53,7 @@ function SummaryLine({ line, onQuantityChange, onRemove }: SummaryLineProps) {
         <div className="flex items-center gap-1.5 flex-wrap">
           {isPromo && (
             <span
-              className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border"
-              style={{
-                backgroundColor: 'var(--primary-light, #f4f4f5)',
-                borderColor: 'var(--primary-border, #e4e4e7)',
-                color: 'var(--primary-text, #18181b)',
-              }}
+              className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border bg-purple-100 text-purple-700 border-purple-200"
             >
               Promo
             </span>

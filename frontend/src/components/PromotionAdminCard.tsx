@@ -42,9 +42,14 @@ export function PromotionAdminCard({
         )}
 
         <div className="flex items-start justify-between gap-2">
-          <h3 className="font-bold text-gray-900 text-base leading-snug">
-            {promo.name}
-          </h3>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 border border-purple-200">
+              Promo
+            </span>
+            <h3 className="font-bold text-gray-900 text-base leading-snug">
+              {promo.name}
+            </h3>
+          </div>
           <button
             type="button"
             onClick={() => onToggleActive()}
