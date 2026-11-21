@@ -5,7 +5,7 @@ import { StatsSection } from '@/components/StatsSection';
 import * as statsService from '@/services/statsService';
 import * as ingredientService from '@/services/ingredientService';
 import type { PredictionsResponse, CopilotAnswerResponse, DashboardKPIsResponse } from '@/types/stats';
-import type { IngredientConsumptionResponse } from '@/types/ingredient';
+import type { IngredientConsumptionReport } from '@/types/ingredient';
 
 vi.mock('@/services/statsService');
 vi.mock('@/services/ingredientService');
@@ -84,7 +84,7 @@ const MOCK_PREDICTIONS: PredictionsResponse = {
   generated_at: '2026-11-21T02:00:00Z',
 };
 
-const MOCK_CONSUMPTION: IngredientConsumptionResponse = {
+const MOCK_CONSUMPTION: IngredientConsumptionReport = {
   completed_orders: 15,
   items: [
     {

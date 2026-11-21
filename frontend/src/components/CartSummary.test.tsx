@@ -14,6 +14,7 @@ const mockProduct: Product = {
   price: 10000,
   category: { id: 1, name: 'Pizzas' },
   dietary_restrictions: [],
+  image_url: null,
 };
 
 function TestWrapper() {

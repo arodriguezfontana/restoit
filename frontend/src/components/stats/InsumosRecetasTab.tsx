@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { fetchIngredientConsumption } from '@/services/ingredientService';
 import { fetchStrategicInsight } from '@/services/statsService';
-import type { IngredientConsumptionResponse } from '@/types/ingredient';
+import type { IngredientConsumptionReport } from '@/types/ingredient';
 import type { StrategicInsightResponse } from '@/types/stats';
+import type { DateRange } from '@/utils/dateRange';
 import { rangeForPreset } from '@/utils/dateRange';
 import { formatCurrency } from '@/utils/currency';
 import { formatQuantity } from '@/utils/ingredients';
@@ -10,13 +11,13 @@ import { PanelNote } from '@/components/ui/PanelNote';
 import { SparklesIcon } from '@/components/Icons';
 
 interface InsumosRecetasTabProps {
-  range?: { from?: string; to?: string };
+  range?: DateRange;
 }
 
 export function InsumosRecetasTab({ range: externalRange }: InsumosRecetasTabProps = {}) {
   const [searchTerm, setSearchTerm] = useState('');
 
-  const [report, setReport] = useState<IngredientConsumptionResponse | null>(null);
+  const [report, setReport] = useState<IngredientConsumptionReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,7 +29,11 @@ export function InsumosRecetasTab({ range: externalRange }: InsumosRecetasTabPro
   const range = externalRange ?? internalRange;
 
   const [currentPage, setCurrentPage] = useState(1);
-  const [prevFilter, setPrevFilter] = useState({ searchTerm, from: range.from, to: range.to });
+  const [prevFilter, setPrevFilter] = useState<{ searchTerm: string; from?: Date; to?: Date }>({
+    searchTerm,
+    from: range.from,
+    to: range.to,
+  });
   if (searchTerm !== prevFilter.searchTerm || range.from !== prevFilter.from || range.to !== prevFilter.to) {
     setPrevFilter({ searchTerm, from: range.from, to: range.to });
     if (range.from !== prevFilter.from || range.to !== prevFilter.to) {

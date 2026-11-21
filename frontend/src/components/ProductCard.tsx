@@ -41,7 +41,7 @@ export function ProductCard({ product }: { product: Product }) {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => updateQuantity(cartItem.id, cartItem.quantity - 1)}
+                onClick={() => updateQuantity(product.id, cartItem.quantity - 1)}
                 className="w-7 h-7 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition"
                 aria-label={`Quitar una unidad de ${product.name}`}
               >
@@ -50,7 +50,7 @@ export function ProductCard({ product }: { product: Product }) {
               <span className="w-5 text-center text-sm font-medium">{cartItem.quantity}</span>
               <button
                 type="button"
-                onClick={() => updateQuantity(cartItem.id, cartItem.quantity + 1)}
+                onClick={() => updateQuantity(product.id, cartItem.quantity + 1)}
                 disabled={cartItem.quantity >= MAX_QUANTITY_PER_ITEM}
                 className="w-7 h-7 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition disabled:opacity-40 disabled:cursor-not-allowed"
                 aria-label={`Agregar una unidad de ${product.name}`}
