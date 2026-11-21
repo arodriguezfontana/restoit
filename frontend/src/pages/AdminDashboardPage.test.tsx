@@ -240,7 +240,7 @@ describe('AdminDashboardPage', () => {
         .map((button) => button.textContent);
     expect(labels('Operación')).toEqual(['Comandas', 'Tomar pedido', 'Control de caja', 'Historial', 'Clientes', 'Repartidores']);
     expect(labels('Catálogo')).toEqual(['Productos', 'Categorías', 'Promociones', 'Ingredientes']);
-    expect(labels('Reportes')).toEqual(['Estadísticas', 'Reporte de ingredientes']);
+    expect(labels('Reportes')).toEqual(['Estadísticas']);
     expect(labels('Configuración')).toEqual(['Horarios', 'Menú y promociones', 'Impresoras', 'Configuración']);
     expect(screen.queryByRole('button', { name: 'Ingresos' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Comandas' })).toHaveAttribute('aria-current', 'page');
@@ -310,10 +310,6 @@ describe('AdminDashboardPage', () => {
       async () => {
         expect(await screen.findByRole('heading', { name: 'Menú y promociones' })).toBeInTheDocument();
       },
-    ],
-    [
-      'Reporte de ingredientes',
-      async () => expect(await screen.findByText('No hay consumo de ingredientes en el rango seleccionado.')).toBeInTheDocument(),
     ],
     ['Horarios', async () => expect(await screen.findByText(/se aceptan pedidos a cualquier hora/)).toBeInTheDocument()],
     ['Configuración', async () => expect(await screen.findByRole('heading', { name: 'Configuración' })).toBeInTheDocument()],

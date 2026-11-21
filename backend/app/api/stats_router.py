@@ -129,7 +129,7 @@ def get_strategic_insight(
 
 @router.get("/predictions", dependencies=[Depends(get_current_admin)])
 def get_predictions(
-    weeks: int = Query(8, ge=4, le=16, description="Semanas históricas analizadas para la proyección"),
+    weeks: int = Query(26, ge=4, le=52, description="Semanas históricas analizadas para la proyección (6 meses por defecto)"),
     db: Session = Depends(get_db),
 ) -> PredictionsResponse:
     """Calcula proyecciones de pedidos y facturación a 7 días (diferenciando semana y fin de semana)

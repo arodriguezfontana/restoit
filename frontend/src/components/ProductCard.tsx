@@ -3,10 +3,11 @@ import type { Product } from '@/types/order';
 import { useCart } from '@/hooks/useCart';
 import { ProductThumbnail } from '@/components/ProductThumbnail';
 import { formatCurrency } from '@/utils/currency';
+import { isPlainLineOf } from '@/utils/cart';
 
 export function ProductCard({ product }: { product: Product }) {
   const { items, addItem, updateQuantity } = useCart();
-  const cartItem = items.find((item) => item.product?.id === product.id);
+  const cartItem = items.find((item) => isPlainLineOf(item, product.id, undefined));
 
   return (
     <div className="bg-white rounded-2xl shadow-md p-4 flex gap-4">
@@ -21,13 +22,13 @@ export function ProductCard({ product }: { product: Product }) {
               <span
                 key={restriction}
                 style={{
-                  backgroundColor: 'var(--primary-light, #f4f4f5)',
-                  borderColor: 'var(--primary-border, #e4e4e7)',
-                  color: 'var(--primary-text, #18181b)',
+                  backgroundColor: '#ffffff',
+                  borderColor: 'var(--primary-color, #18181b)',
+                  color: 'var(--primary-color, #18181b)',
                 }}
                 className="rounded-full border text-xs font-semibold px-2.5 py-0.5 shadow-2xs"
               >
-                {restriction}
+                {restriction.charAt(0).toUpperCase() + restriction.slice(1)}
               </span>
             ))}
           </div>
@@ -40,7 +41,7 @@ export function ProductCard({ product }: { product: Product }) {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => updateQuantity(product.id, cartItem.quantity - 1)}
+                onClick={() => updateQuantity(cartItem.id, cartItem.quantity - 1)}
                 className="w-7 h-7 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition"
                 aria-label={`Quitar una unidad de ${product.name}`}
               >
@@ -49,7 +50,7 @@ export function ProductCard({ product }: { product: Product }) {
               <span className="w-5 text-center text-sm font-medium">{cartItem.quantity}</span>
               <button
                 type="button"
-                onClick={() => updateQuantity(product.id, cartItem.quantity + 1)}
+                onClick={() => updateQuantity(cartItem.id, cartItem.quantity + 1)}
                 disabled={cartItem.quantity >= MAX_QUANTITY_PER_ITEM}
                 className="w-7 h-7 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition disabled:opacity-40 disabled:cursor-not-allowed"
                 aria-label={`Agregar una unidad de ${product.name}`}

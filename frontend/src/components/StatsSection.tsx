@@ -24,8 +24,9 @@ type AnalyticsTab = 'rendimiento' | 'insumos' | 'pronosticos';
 export function StatsSection() {
   const [activeTab, setActiveTab] = useState<AnalyticsTab>('rendimiento');
   const [copilotOpen, setCopilotOpen] = useState(false);
+  const [predictionsRefreshKey, setPredictionsRefreshKey] = useState(0);
 
-  const [preset, setPreset] = useState<DateRangePreset>('week');
+  const [preset, setPreset] = useState<DateRangePreset>('month');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
 
@@ -72,7 +73,7 @@ export function StatsSection() {
 
   return (
     <div className="flex flex-col gap-6 lg:h-full pb-28">
-      {/* Barra superior con encabezado, pestañas y botón del Copilot */}
+      {/* Barra superior con encabezado, pestañas y botón del Asistente */}
       <div className="shrink-0 flex flex-col gap-4 bg-white rounded-2xl shadow-md p-6 border border-gray-100">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
@@ -81,20 +82,11 @@ export function StatsSection() {
               Panel de Rendimiento y Ventas
             </p>
           </div>
-
-          <button
-            type="button"
-            onClick={() => setCopilotOpen(true)}
-            className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-gray-900 to-black hover:from-black hover:to-gray-900 text-white px-4 py-2 text-xs font-bold shadow-sm transition self-start sm:self-auto cursor-pointer"
-          >
-            <SparklesIcon className="w-4 h-4 text-amber-400" />
-            <span>Copilot Q&A Comercial</span>
-          </button>
         </div>
 
         {/* Selector de Vistas / Pestañas de Analítica */}
         <div className="flex flex-wrap items-center justify-between gap-4 pt-2 border-t border-gray-100">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => setActiveTab('rendimiento')}
@@ -115,24 +107,34 @@ export function StatsSection() {
                   : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
               }`}
             >
-              Insumos y Recetas
+              Ingredientes y gastos
             </button>
             <button
               type="button"
               onClick={() => setActiveTab('pronosticos')}
-              className={`rounded-xl px-3.5 py-2 text-xs font-bold transition flex items-center gap-1.5 ${
+              className={`rounded-xl px-3.5 py-2 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
                 activeTab === 'pronosticos'
-                  ? 'bg-purple-900 text-white shadow-xs'
-                  : 'bg-purple-50 hover:bg-purple-100 text-purple-900'
+                  ? 'bg-violet-700 text-white shadow-xs'
+                  : 'bg-violet-50 hover:bg-violet-100 text-violet-900 border border-violet-200/60'
               }`}
             >
-              <SparklesIcon className="w-3.5 h-3.5 text-amber-400" />
-              Pronósticos y Prescripciones
+              <SparklesIcon
+                className={`w-3.5 h-3.5 ${activeTab === 'pronosticos' ? 'text-violet-200' : 'text-violet-600'}`}
+              />
+              <span>Predicciones</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setCopilotOpen(true)}
+              className="rounded-xl px-3.5 py-2 text-xs font-bold transition flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200/60 cursor-pointer"
+            >
+              <SparklesIcon className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Asistente Q&A</span>
             </button>
           </div>
 
-          {/* Filtros de fecha exclusivos para la pestaña de Rendimiento */}
-          {activeTab === 'rendimiento' && (
+          {/* Filtros de fecha para las pestañas de Rendimiento e Insumos */}
+          {(activeTab === 'rendimiento' || activeTab === 'insumos') && (
             <div className="flex flex-wrap items-center gap-2">
               {PRESETS.map((p) => (
                 <button
@@ -148,10 +150,21 @@ export function StatsSection() {
               ))}
             </div>
           )}
+
+          {/* Botón de actualizar pronóstico a la derecha en la fila de pestañas */}
+          {activeTab === 'pronosticos' && (
+            <button
+              type="button"
+              onClick={() => setPredictionsRefreshKey((k) => k + 1)}
+              className="rounded-xl border border-gray-300 hover:bg-gray-50 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 transition shadow-2xs cursor-pointer"
+            >
+              Actualizar pronóstico
+            </button>
+          )}
         </div>
       </div>
 
-      {activeTab === 'rendimiento' && preset === 'custom' && (
+      {(activeTab === 'rendimiento' || activeTab === 'insumos') && preset === 'custom' && (
         <div className="shrink-0 flex items-center gap-2 bg-white p-4 rounded-2xl shadow-md border border-gray-100">
           <input
             type="date"
@@ -194,9 +207,9 @@ export function StatsSection() {
         </>
       )}
 
-      {activeTab === 'insumos' && <InsumosRecetasTab />}
+      {activeTab === 'insumos' && <InsumosRecetasTab range={range} />}
 
-      {activeTab === 'pronosticos' && <PredictiveAnalyticsTab />}
+      {activeTab === 'pronosticos' && <PredictiveAnalyticsTab refreshKey={predictionsRefreshKey} />}
 
       {/* Drawer del Copilot Q&A Comercial (accesible desde todas las pestañas) */}
       <CopilotDrawer isOpen={copilotOpen} onClose={() => setCopilotOpen(false)} />

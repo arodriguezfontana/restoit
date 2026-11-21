@@ -287,3 +287,35 @@ def test_copilot_degradacion_controlada_ante_falla_de_gemini(client, db_session,
         assert "Muzzarella Barra" in data["answer"]
         assert data["cited_period"] is not None
         assert data["data_summary"] is not None
+
+
+def test_copilot_responde_cuantas_muzzarelas_vendi(client, db_session, setup_menu_and_recipes):
+    muzza = setup_menu_and_recipes["muzza"]
+    _order(db_session, status="Finalizado", created_at=AYER, items=[(muzza, 4)], total=32000)
+
+    resp = client.post(
+        f"{STATS_URL}/copilot/ask",
+        json={"question": "cuantas muzzarelas vendi?"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+
+    assert "Vendiste" in data["answer"]
+    assert "Pizza Muzzarella" in data["answer"]
+    assert data["data_summary"]["total_units_sold"] == 4
+
+
+def test_copilot_responde_me_conviene_comprar_insumo(client, db_session, setup_menu_and_recipes):
+    muzza = setup_menu_and_recipes["muzza"]
+    _order(db_session, status="Finalizado", created_at=AYER, items=[(muzza, 3)], total=24000)
+
+    resp = client.post(
+        f"{STATS_URL}/copilot/ask",
+        json={"question": "me conviene comprar muzzarella?"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+
+    assert "conviene comprar" in data["answer"].lower()
+    assert "Muzzarella Barra" in data["answer"]
+    assert data["data_summary"]["ingredient_name"] == "Muzzarella Barra"

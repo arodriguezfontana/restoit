@@ -145,49 +145,54 @@ describe('US-67: Inteligencia de Negocio con Analítica Predictiva y Copilot Q&A
 
     // Vistas visibles en el encabezado
     expect(screen.getByRole('button', { name: /Rendimiento y Metas/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Insumos y Recetas/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Pronósticos y Prescripciones/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Ingredientes y gastos/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Predicciones/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Asistente Q&A/i })).toBeInTheDocument();
 
     // 1. Pestaña inicial: Rendimiento y Metas
     expect(await screen.findByText('Seguimiento de Metas')).toBeInTheDocument();
     expect(screen.getByText('Ticket Promedio')).toBeInTheDocument();
 
-    // 2. Navegar a Insumos y Recetas
-    const insumosTabBtn = screen.getByRole('button', { name: /Insumos y Recetas/i });
+    // 2. Navegar a Ingredientes y gastos
+    const insumosTabBtn = screen.getByRole('button', { name: /Ingredientes y gastos/i });
     await user.click(insumosTabBtn);
 
     expect(await screen.findByText('Gasto Total Acumulado')).toBeInTheDocument();
-    expect(screen.getByText('Insumo Mayor Gasto')).toBeInTheDocument();
+    expect(screen.getByText('Ingrediente Mayor Gasto')).toBeInTheDocument();
     expect((await screen.findAllByText('Muzzarella Barra')).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Tomate Triturado')).toBeInTheDocument();
+    expect(screen.getByText('Consejos de IA')).toBeInTheDocument();
+    expect(screen.getByText('Consejos inteligentes para optimizar compras y materias primas')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Consejos con IA/i })).toBeInTheDocument();
 
-    // 3. Navegar a Pronósticos y Prescripciones
-    const pronosticosTabBtn = screen.getByRole('button', { name: /Pronósticos y Prescripciones/i });
-    await user.click(pronosticosTabBtn);
+    // 3. Navegar a Predicciones
+    const prediccionesTabBtn = screen.getByRole('button', { name: /Predicciones/i });
+    await user.click(prediccionesTabBtn);
 
-    expect(await screen.findByText('Pronósticos Comerciales y Prescripciones')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /Actualizar pronóstico/i })).toBeInTheDocument();
     expect(screen.getByText('Total Próximos 7 Días')).toBeInTheDocument();
-    expect(screen.getByText('Fin de Semana (Sáb - Dom)')).toBeInTheDocument();
-    expect(screen.getByText('Días de Semana (Lun - Vie)')).toBeInTheDocument();
+    expect(screen.getByText('Fin de Semana')).toBeInTheDocument();
+    expect(screen.getByText('Días de Semana')).toBeInTheDocument();
     expect(screen.getByText('Demanda Proyectada de Insumos Principales')).toBeInTheDocument();
-    expect(screen.getByText(/Reforzar personal de cocina y cadetes/i)).toBeInTheDocument();
   });
 
-  it('el panel lateral de Copilot Q&A Comercial se abre desde el botón superior y permite consultar datos ad-hoc', async () => {
+  it('el panel lateral de Asistente Q&A se abre desde el botón y permite consultar datos ad-hoc', async () => {
     render(<StatsSection />);
     const user = userEvent.setup();
 
-    // Botón superior de Copilot accesible
-    const copilotBtn = screen.getByRole('button', { name: /Copilot Q&A Comercial/i });
-    await user.click(copilotBtn);
+    // Botón de Asistente Q&A accesible
+    const assistantBtn = screen.getByRole('button', { name: /Asistente Q&A/i });
+    await user.click(assistantBtn);
 
     // Se abre el drawer
-    expect(await screen.findByRole('heading', { name: 'Copilot Q&A Comercial' })).toBeInTheDocument();
-    expect(screen.getByText(/Preguntas frecuentes sugeridas/i)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Asistente Q&A' })).toBeInTheDocument();
+    expect(screen.getByText('Consultas sobre datos reales del negocio en los últimos 30 días')).toBeInTheDocument();
 
-    // Pregunta sugerida rápida
-    const quickBtn = screen.getAllByRole('button', { name: '¿Cuáles son los 3 insumos con más gasto este mes?' })[0];
-    await user.click(quickBtn);
+    // Consulta enviada desde el input
+    const input = screen.getByPlaceholderText(/Hacé una pregunta sobre tu negocio/i);
+    await user.type(input, '¿Cuáles son los 3 insumos con más gasto este mes?');
+    const sendBtn = screen.getByRole('button', { name: 'Enviar' });
+    await user.click(sendBtn);
 
     await waitFor(() => {
       expect(stats.askCopilot).toHaveBeenCalledWith(
@@ -201,12 +206,12 @@ describe('US-67: Inteligencia de Negocio con Analítica Predictiva y Copilot Q&A
     expect(screen.getByText(/Mes actual \(01\/11\/2026 al 21\/11\/2026\)/i)).toBeInTheDocument();
 
     // Permite cerrar el drawer
-    const closeBtn = screen.getByRole('button', { name: 'Cerrar panel de Copilot' });
+    const closeBtn = screen.getByRole('button', { name: 'Cerrar panel de Asistente' });
     await user.click(closeBtn);
-    expect(screen.queryByText(/Preguntas frecuentes sugeridas/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Asistente Q&A' })).not.toBeInTheDocument();
   });
 
-  it('el Copilot permite hacer preguntas personalizadas y muestra estado de degradación controlada', async () => {
+  it('el Asistente permite hacer preguntas personalizadas y muestra estado de degradación controlada', async () => {
     stats.askCopilot.mockResolvedValueOnce({
       answer: 'En los últimos 30 días se registraron 2 cancelaciones.',
       cited_period: 'Últimos 30 días',
@@ -218,8 +223,8 @@ describe('US-67: Inteligencia de Negocio con Analítica Predictiva y Copilot Q&A
     render(<StatsSection />);
     const user = userEvent.setup();
 
-    const copilotBtn = screen.getByRole('button', { name: /Copilot Q&A Comercial/i });
-    await user.click(copilotBtn);
+    const assistantBtn = screen.getByRole('button', { name: /Asistente Q&A/i });
+    await user.click(assistantBtn);
 
     const input = screen.getByPlaceholderText(/Hacé una pregunta sobre tu negocio/i);
     await user.type(input, '¿Qué día tuvimos más cancelaciones?');
@@ -237,8 +242,8 @@ describe('US-67: Inteligencia de Negocio con Analítica Predictiva y Copilot Q&A
     render(<StatsSection />);
     const user = userEvent.setup();
 
-    const pronosticosTabBtn = screen.getByRole('button', { name: /Pronósticos y Prescripciones/i });
-    await user.click(pronosticosTabBtn);
+    const prediccionesTabBtn = screen.getByRole('button', { name: /Predicciones/i });
+    await user.click(prediccionesTabBtn);
 
     expect(await screen.findByText(/No se pudieron calcular las predicciones/i)).toBeInTheDocument();
     const retryBtn = screen.getByRole('button', { name: /Reintentar predicción/i });
@@ -250,5 +255,43 @@ describe('US-67: Inteligencia de Negocio con Analítica Predictiva y Copilot Q&A
 
     expect(await screen.findByText('Total Próximos 7 Días')).toBeInTheDocument();
     expect(screen.getByText('Muzzarella Barra')).toBeInTheDocument();
+  });
+
+  it('las tablas de insumos y recetas y predicciones paginan de a 6 ingredientes', async () => {
+    // Mock con 8 insumos en consumo
+    const manyIngredients = Array.from({ length: 8 }, (_, i) => ({
+      ingredient_id: i + 1,
+      ingredient_name: `Ingrediente ${i + 1}`,
+      unit: 'kg',
+      total_quantity: 10 + i,
+      unit_cost: 100,
+      total_cost: (10 + i) * 100,
+    }));
+
+    ingService.fetchIngredientConsumption.mockResolvedValueOnce({
+      completed_orders: 15,
+      items: manyIngredients,
+      products_without_recipe: [],
+    });
+
+    render(<StatsSection />);
+    const user = userEvent.setup();
+
+    // Navegar a Ingredientes y gastos
+    const insumosTabBtn = screen.getByRole('button', { name: /Ingredientes y gastos/i });
+    await user.click(insumosTabBtn);
+
+    expect((await screen.findAllByText('Ingrediente 1')).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByRole('cell', { name: 'Ingrediente 6' })).toBeInTheDocument();
+    expect(screen.queryByRole('cell', { name: 'Ingrediente 7' })).not.toBeInTheDocument();
+    expect(screen.getByText('Mostrando 1 a 6 de 8 insumos')).toBeInTheDocument();
+
+    // Siguiente página
+    const nextBtn = screen.getByRole('button', { name: 'Siguiente' });
+    await user.click(nextBtn);
+
+    expect(await screen.findByRole('cell', { name: 'Ingrediente 7' })).toBeInTheDocument();
+    expect(screen.getByRole('cell', { name: 'Ingrediente 8' })).toBeInTheDocument();
+    expect(screen.queryByRole('cell', { name: 'Ingrediente 1' })).not.toBeInTheDocument();
   });
 });

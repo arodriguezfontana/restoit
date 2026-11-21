@@ -22,7 +22,7 @@ export function CopilotDrawer({ isOpen, onClose }: CopilotDrawerProps) {
     {
       role: 'assistant',
       content:
-        '¡Hola! Soy tu Copilot Comercial gastronómico. Podés consultarme sobre ventas, facturación, ingredientes con mayor gasto, días con cancelaciones o proyecciones de compras. Mis respuestas se basan directamente en los datos reales del negocio.',
+        'Podés consultarme directamente sobre ventas de platos específicos, facturación, si te conviene comprar materias primas o qué día hubo cancelaciones.',
       suggested_followups: [
         '¿Cuáles son los 3 insumos con más gasto este mes?',
         '¿Qué día tuvimos más cancelaciones?',
@@ -97,43 +97,23 @@ export function CopilotDrawer({ isOpen, onClose }: CopilotDrawerProps) {
         {/* Header */}
         <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/75">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-black text-white">
+            <div className="p-2 rounded-xl bg-emerald-600 text-white">
               <SparklesIcon className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-gray-900">Copilot Q&A Comercial</h3>
-              <p className="text-[11px] text-gray-500">Consultas ad-hoc sobre datos reales del negocio</p>
+              <h3 className="text-sm font-bold text-gray-900">Asistente Q&A</h3>
+              <p className="text-[11px] text-gray-500">Consultas sobre datos reales del negocio en los últimos 30 días</p>
             </div>
           </div>
 
           <button
             type="button"
             onClick={onClose}
-            aria-label="Cerrar panel de Copilot"
+            aria-label="Cerrar panel de Asistente"
             className="rounded-lg p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-200/60 transition"
           >
             ✕
           </button>
-        </div>
-
-        {/* Botones de Acceso Rápido / Preguntas Frecuentes */}
-        <div className="px-4 py-3 border-b border-gray-100 bg-white">
-          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-2">
-            Preguntas frecuentes sugeridas
-          </span>
-          <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
-            {QUICK_QUESTIONS.map((q) => (
-              <button
-                key={q}
-                type="button"
-                onClick={() => handleSend(q)}
-                disabled={loading}
-                className="text-[11px] font-medium bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg px-2.5 py-1 text-left transition disabled:opacity-50"
-              >
-                {q}
-              </button>
-            ))}
-          </div>
         </div>
 
         {/* Historial de Mensajes */}
@@ -150,15 +130,19 @@ export function CopilotDrawer({ isOpen, onClose }: CopilotDrawerProps) {
                     : 'bg-white text-gray-800 border border-gray-200/80 shadow-xs rounded-bl-none space-y-2'
                 }`}
               >
-                {/* Contenido en markdown simple */}
-                <div className="whitespace-pre-wrap">{msg.content}</div>
+                {/* Contenido directo sin markdown doble asterisco ni saludos repetitivos */}
+                <div className="whitespace-pre-wrap">
+                  {msg.content.replace(/\*\*/g, '').replace(/^¡?hola!?\s*[,.]?\s*/i, '')}
+                </div>
 
-                {/* Período citado */}
-                {msg.cited_period && (
+                {/* Período citado (solo si difiere del período general de 30 días) */}
+                {(msg.is_fallback || (msg.cited_period && !msg.cited_period.toLowerCase().includes('30 d'))) && (
                   <div className="pt-1.5 border-t border-gray-100 flex items-center justify-between text-[10px] text-gray-500 font-medium">
-                    <span className="bg-gray-100 px-2 py-0.5 rounded-full text-gray-700">
-                      📅 {msg.cited_period}
-                    </span>
+                    {msg.cited_period && !msg.cited_period.toLowerCase().includes('30 d') ? (
+                      <span className="bg-gray-100 px-2 py-0.5 rounded-full text-gray-700">
+                        📅 {msg.cited_period}
+                      </span>
+                    ) : <span />}
                     {msg.is_fallback && (
                       <span className="text-amber-600 font-semibold" title="Degradación controlada por alta demanda">
                         Modo directo

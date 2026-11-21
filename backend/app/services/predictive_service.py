@@ -103,8 +103,20 @@ def _project_next_7_days(
         day_name = WEEKDAYS[dow]
         is_weekend = dow in (5, 6)  # Sábado y Domingo
 
-        projected_orders = max(0, int(round(avg_orders.get(dow, 0.0) * trend_factor)))
-        projected_rev = max(0.0, round(avg_rev.get(dow, 0.0) * trend_factor, 2))
+        raw_orders = avg_orders.get(dow, 0.0) * trend_factor
+        raw_rev = avg_rev.get(dow, 0.0) * trend_factor
+
+        projected_orders = max(0, int(round(raw_orders)))
+        projected_rev = max(0.0, round(raw_rev, 2))
+
+        # Consistencia de negocio: no puede haber facturación proyectada con 0 pedidos
+        if projected_rev > 0 and projected_orders == 0:
+            if raw_orders >= 0.1:
+                projected_orders = 1
+            else:
+                projected_rev = 0.0
+        elif projected_orders == 0:
+            projected_rev = 0.0
 
         projections.append(
             DayProjectionItem(
@@ -336,13 +348,13 @@ Respondé ÚNICAMENTE con un array JSON de strings en español, sin formato mark
     return None
 
 
-def calculate_predictions(db: Session, historical_weeks: int = 8) -> PredictionsResponse:
-    """Calcula proyecciones de pedidos, facturación e insumos para los próximos 7 días a partir del historial real."""
-    weeks = max(4, min(12, historical_weeks))
+def calculate_predictions(db: Session, historical_weeks: int = 26) -> PredictionsResponse:
+    """Calcula proyecciones de pedidos, facturación e insumos para los próximos 7 días a partir del historial real (6 meses o histórico total)."""
+    weeks = max(4, min(52, historical_weeks))
     start_date = ahora_local() - timedelta(weeks=weeks)
     start_utc = start_date.astimezone(timezone.utc)
 
-    # Obtener pedidos completados y cancelados de las últimas N semanas
+    # Obtener pedidos completados y cancelados de las últimas N semanas (o histórico total)
     orders = (
         db.query(Order)
         .filter(
@@ -352,7 +364,23 @@ def calculate_predictions(db: Session, historical_weeks: int = 8) -> Predictions
         .all()
     )
 
-    avg_orders, avg_rev, trend_factor, cancellation_rate = _calculate_historical_averages(orders, weeks)
+    # Determinar las semanas reales de historial para no subestimar promedios si hay menos tiempo de apertura
+    first_order = (
+        db.query(Order)
+        .filter(
+            Order.created_at >= start_utc,
+            Order.status.in_([OrderStatus.COMPLETED.value, OrderStatus.CANCELLED.value]),
+        )
+        .order_by(Order.created_at.asc())
+        .first()
+    )
+    if first_order:
+        days_span = max(7, (ahora_local() - _to_local_datetime(first_order.created_at)).days)
+        actual_weeks = min(weeks, max(1, round(days_span / 7.0)))
+    else:
+        actual_weeks = weeks
+
+    avg_orders, avg_rev, trend_factor, cancellation_rate = _calculate_historical_averages(orders, actual_weeks)
     days = _project_next_7_days(avg_orders, avg_rev, trend_factor)
 
     total_projected_orders = sum(d.projected_orders for d in days)
