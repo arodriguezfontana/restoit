@@ -24,7 +24,7 @@ function InfoIcon({ accentColor, children }: { accentColor: string; children: Re
 }
 
 function Label({ children }: { children: ReactNode }) {
-  return <span className="block text-[11px] font-bold uppercase tracking-wide text-gray-500">{children}</span>;
+  return <span className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500">{children}</span>;
 }
 
 const CARD = 'flex items-start gap-3 p-3 rounded-xl bg-gray-50/80 border border-gray-100';
@@ -67,7 +67,7 @@ export function StoreInfoCard({ address, contactPhone, schedule, accentColor }: 
                   <Label>Teléfonos</Label>
                   <a
                     href={`tel:${contactPhone.split('/')[0].trim()}`}
-                    className="text-sm font-bold text-gray-900 hover:underline break-words block"
+                    className="text-sm font-semibold text-gray-900 hover:underline break-words block"
                   >
                     {contactPhone}
                   </a>

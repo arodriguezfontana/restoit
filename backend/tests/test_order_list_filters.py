@@ -19,22 +19,22 @@ def _create_order(db_session, status, created_at=None, **extra):
 
 
 def test_list_orders_filters_by_status(client, db_session):
-    _create_order(db_session, "Pendiente")
+    _create_order(db_session, "En Camino")
     _create_order(db_session, "Confirmado")
     _create_order(db_session, "Finalizado")
-    _create_order(db_session, "Rechazado")
+    _create_order(db_session, "Cancelado")
 
-    response = client.get("/api/v1/orders", params={"status": ["Pendiente", "Confirmado"]})
+    response = client.get("/api/v1/orders", params={"status": ["En Camino", "Confirmado"]})
 
     assert response.status_code == 200
     statuses = {order["status"] for order in response.json()}
-    assert statuses == {"Pendiente", "Confirmado"}
+    assert statuses == {"En Camino", "Confirmado"}
 
 
 def test_list_orders_without_status_filter_returns_all(client, db_session):
-    _create_order(db_session, "Pendiente")
+    _create_order(db_session, "Confirmado")
     _create_order(db_session, "Finalizado")
-    _create_order(db_session, "Rechazado")
+    _create_order(db_session, "Cancelado")
 
     response = client.get("/api/v1/orders")
 
@@ -58,7 +58,7 @@ def test_list_orders_filters_by_date_range_inclusive(client, db_session):
 
 
 def test_list_orders_combines_date_and_status_filters(client, db_session):
-    _create_order(db_session, "Pendiente", created_at=datetime(2026, 9, 28, 12, tzinfo=timezone.utc))
+    _create_order(db_session, "Confirmado", created_at=datetime(2026, 9, 28, 12, tzinfo=timezone.utc))
     esperado = _create_order(db_session, "Finalizado", created_at=datetime(2026, 9, 28, 13, tzinfo=timezone.utc))
     _create_order(db_session, "Finalizado", created_at=datetime(2026, 9, 20, 13, tzinfo=timezone.utc))
 
@@ -70,9 +70,9 @@ def test_list_orders_combines_date_and_status_filters(client, db_session):
 
 
 def test_list_orders_returns_newest_first(client, db_session):
-    viejo = _create_order(db_session, "Pendiente", created_at=datetime(2026, 9, 28, 10, tzinfo=timezone.utc))
-    nuevo = _create_order(db_session, "Pendiente", created_at=datetime(2026, 9, 28, 12, tzinfo=timezone.utc))
-    medio = _create_order(db_session, "Pendiente", created_at=datetime(2026, 9, 28, 11, tzinfo=timezone.utc))
+    viejo = _create_order(db_session, "Confirmado", created_at=datetime(2026, 9, 28, 10, tzinfo=timezone.utc))
+    nuevo = _create_order(db_session, "Confirmado", created_at=datetime(2026, 9, 28, 12, tzinfo=timezone.utc))
+    medio = _create_order(db_session, "Confirmado", created_at=datetime(2026, 9, 28, 11, tzinfo=timezone.utc))
 
     ids = [o["id"] for o in client.get("/api/v1/orders").json()]
 

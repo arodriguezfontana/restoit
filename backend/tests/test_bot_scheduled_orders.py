@@ -52,7 +52,6 @@ def test_demora_minima_es_15_minutos(db_session):
 
 def test_demora_suma_3_minutos_por_pedido_en_proceso(db_session):
     _agregar_pedidos(db_session, "Confirmado", 4)
-    _agregar_pedidos(db_session, "Pendiente", 2)
     _agregar_pedidos(db_session, "En Camino", 1)
     _agregar_pedidos(db_session, "Listo para Retirar", 1)
 
@@ -151,7 +150,7 @@ def test_bot_guarda_telefono_y_observaciones(db_session, muzza):
     )
 
     assert "Listo" in resultado
-    assert "Todavía no está confirmado" in resultado
+    assert "Ya lo estamos preparando" in resultado
     order = db_session.query(Order).one()
     assert order.customer_phone == "1144445555"
     assert order.notes == "Sin cebolla, timbre 2B"

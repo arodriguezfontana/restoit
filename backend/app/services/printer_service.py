@@ -18,6 +18,7 @@ from app.models.order import DeliveryMethod, Order, PaymentMethod
 from app.models.printer import Printer
 from app.repositories import printer_repository
 from app.schemas.printer_schemas import PrinterConfigUpdate, PrintResult
+from app.services.payment_proof_service import current_proof, pays_by_transfer
 
 logger = logging.getLogger(__name__)
 
@@ -66,25 +67,20 @@ def _address(printer: Printer) -> tuple[str, int]:
     return printer.host.lower(), printer.port
 
 
-def resolve_targets(printers: list[Printer], sectors: list[str]) -> tuple[list[Printer], list[str]]:
-    """Impresoras a las que va la comanda y sectores que no tienen ninguna.
+def resolve_sector_printers(printers: list[Printer], sectors: list[str]) -> tuple[list[tuple[str, Printer]], list[str]]:
+    """(sector, impresora) de cada copia de la comanda y los sectores que no tienen ninguna.
 
-    Con una sola impresora configurada se imprime ahí sin importar el sector. Si hay varias, la comanda sale por
-    la impresora de cada sector del pedido (sin repetir la que atiende a más de un sector).
+    Sale una copia por sector del pedido. Con una sola impresora configurada todas las copias salen ahí, sin
+    importar el sector. Si hay varias, cada copia sale por la impresora de su sector (que puede atender a más de uno).
     """
     distinct = {_address(p): p for p in printers}
     if len(distinct) == 1:
-        return [next(iter(distinct.values()))], []
+        only = next(iter(distinct.values()))
+        return [(sector, only) for sector in sectors], []
     by_sector = {p.sector.lower(): p for p in printers}
-    targets: dict[tuple[str, int], Printer] = {}
-    missing: list[str] = []
-    for sector in sectors:
-        printer = by_sector.get(sector.lower())
-        if printer is None:
-            missing.append(sector)
-        else:
-            targets.setdefault(_address(printer), printer)
-    return list(targets.values()), missing
+    copies = [(sector, by_sector.get(sector.lower())) for sector in sectors]
+    found = [(sector, printer) for sector, printer in copies if printer is not None]
+    return found, [sector for sector, printer in copies if printer is None]
 
 
 # --- Ticket ----------------------------------------------------------------------------------------
@@ -128,12 +124,10 @@ def _payment_text(order: Order) -> str:
     return f"{method} ({'abonado' if order.is_paid else 'a cobrar'})"
 
 
-def build_ticket_lines(order: Order, sector: str | None = None) -> list[tuple[str, str]]:
+def build_ticket_lines(order: Order) -> list[tuple[str, str]]:
     """Líneas de la comanda como (estilo, texto); estilo: 'title', 'bold', 'center' o 'normal'."""
     sep = "-" * TICKET_WIDTH
     lines: list[tuple[str, str]] = []
-    if sector:
-        lines.append(("center", f"SECTOR: {sector.upper()}"))
     lines.append(("title", f"PEDIDO #{order.shift_number}"))
     if order.created_at is not None:
         lines.append(("center", _local_time(order.created_at, "%d/%m/%Y %H:%M")))
@@ -158,12 +152,14 @@ def build_ticket_lines(order: Order, sector: str | None = None) -> list[tuple[st
         lines.append(("normal", sep))
     lines.append(("bold", _row("TOTAL", _money(order.total_amount))))
     lines.append(("normal", f"Pago: {_payment_text(order)}"))
+    if pays_by_transfer(order):
+        lines.append(("normal", f"Comprobante: {'adjunto' if current_proof(order) else 'pendiente'}"))
     return lines
 
 
-def render_ticket(order: Order, sector: str | None = None) -> bytes:
+def render_ticket(order: Order) -> bytes:
     out = bytearray(ESC_INIT + ESC_CODEPAGE_858)
-    for style, text in build_ticket_lines(order, sector):
+    for style, text in build_ticket_lines(order):
         data = text.encode(ENCODING, "replace") + b"\n"
         if style == "title":
             out += ESC_CENTER + ESC_DOUBLE_ON + ESC_BOLD_ON + data + ESC_DOUBLE_OFF + ESC_BOLD_OFF + ESC_LEFT
@@ -198,19 +194,17 @@ class PrintJob:
 
 
 def plan_print(db: Session, order: Order) -> tuple[list[PrintJob], list[str]]:
-    """Arma las comandas de un pedido (una por impresora) y los problemas que impiden imprimir alguna.
+    """Arma las copias de la comanda de un pedido (una por sector) y los problemas que impiden imprimir alguna.
 
     Se separa del envío para poder armar el ticket con la sesión de la base y mandarlo después, sin tocar la base.
     """
     printers = list_printers(db)
     if not printers:
         return [], ["No hay impresoras configuradas."]
-    targets, missing = resolve_targets(printers, order.sectors or ["cocina"])
+    copies, missing = resolve_sector_printers(printers, order.sectors or ["cocina"])
     errors = [f"No hay impresora configurada para el sector {sector}." for sector in missing]
-    multiple = len({_address(p) for p in printers}) > 1
-    jobs = [
-        PrintJob(p.name, p.host, p.port, render_ticket(order, p.sector if multiple else None)) for p in targets
-    ]
+    ticket = render_ticket(order)
+    jobs = [PrintJob(p.name, p.host, p.port, ticket) for _sector, p in copies]
     return jobs, errors
 
 
@@ -229,7 +223,7 @@ def run_print_jobs(jobs: list[PrintJob], errors: list[str] | None = None) -> Pri
 
 
 def print_order(db: Session, order: Order) -> PrintResult:
-    """Manda la comanda a la impresora de cada sector del pedido. Nunca lanza: informa los errores en el resultado."""
+    """Manda una copia de la comanda a la impresora de cada sector del pedido. Nunca lanza: informa los errores en el resultado."""
     try:
         jobs, errors = plan_print(db, order)
         return run_print_jobs(jobs, errors)

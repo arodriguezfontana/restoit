@@ -226,7 +226,7 @@ describe('AdminDashboardPage', () => {
     renderDashboard();
 
     expect(screen.getByText('Panel de Comandas')).toBeVisible();
-    expect(await screen.findAllByText('Sin pedidos')).toHaveLength(4);
+    expect(await screen.findAllByText('Sin pedidos')).toHaveLength(3);
   });
 
   it('el menú lateral agrupa las secciones por tarea', async () => {
@@ -239,9 +239,9 @@ describe('AdminDashboardPage', () => {
         .getAllByRole('button')
         .map((button) => button.textContent);
     expect(labels('Operación')).toEqual(['Comandas', 'Tomar pedido', 'Control de caja', 'Historial', 'Clientes', 'Repartidores']);
-    expect(labels('Catálogo')).toEqual(['Productos y categorías', 'Promociones', 'Ingredientes']);
-    expect(labels('Reportes')).toEqual(['Estadísticas', 'Reporte de ingredientes']);
-    expect(labels('Configuración')).toEqual(['Horarios', 'Menú y promociones', 'Configuración', 'Impresoras']);
+    expect(labels('Catálogo')).toEqual(['Productos', 'Categorías', 'Promociones', 'Ingredientes']);
+    expect(labels('Reportes')).toEqual(['Estadísticas']);
+    expect(labels('Configuración')).toEqual(['Horarios', 'Menú y promociones', 'Impresoras', 'Configuración']);
     expect(screen.queryByRole('button', { name: 'Ingresos' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Comandas' })).toHaveAttribute('aria-current', 'page');
   });
@@ -286,10 +286,17 @@ describe('AdminDashboardPage', () => {
     ['Repartidores', async () => expect(await screen.findByText('Aún no hay repartidores registrados en el sistema.')).toBeInTheDocument()],
     ['Ingredientes', async () => expect(await screen.findByText('Todavía no cargaste ingredientes.')).toBeInTheDocument()],
     [
-      'Productos y categorías',
+      'Productos',
       async () => {
-        expect(screen.getByRole('heading', { name: 'Productos y categorías' })).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: 'Productos' })).toBeInTheDocument();
         expect(await screen.findByText('Todavía no hay productos en el catálogo.')).toBeInTheDocument();
+      },
+    ],
+    [
+      'Categorías',
+      async () => {
+        expect(screen.getByRole('heading', { name: 'Categorías' })).toBeInTheDocument();
+        expect(await screen.findByText('Todavía no creaste categorías.')).toBeInTheDocument();
       },
     ],
     [
@@ -303,10 +310,6 @@ describe('AdminDashboardPage', () => {
       async () => {
         expect(await screen.findByRole('heading', { name: 'Menú y promociones' })).toBeInTheDocument();
       },
-    ],
-    [
-      'Reporte de ingredientes',
-      async () => expect(await screen.findByText('No hay consumo de ingredientes en el rango seleccionado.')).toBeInTheDocument(),
     ],
     ['Horarios', async () => expect(await screen.findByText(/se aceptan pedidos a cualquier hora/)).toBeInTheDocument()],
     ['Configuración', async () => expect(await screen.findByRole('heading', { name: 'Configuración' })).toBeInTheDocument()],
@@ -353,7 +356,7 @@ describe('AdminDashboardPage', () => {
   });
 
   it('con PIN de caja activado exige PIN antes de ingresar a Control de caja', async () => {
-    vi.mocked(storeConfigService.fetchStoreConfig).mockResolvedValueOnce({
+    vi.mocked(storeConfigService.fetchStoreConfig).mockResolvedValue({
       id: 1,
       store_name: 'RestoIT',
       address: '',

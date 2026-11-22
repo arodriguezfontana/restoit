@@ -10,7 +10,9 @@ import httpx
 from app.core.channels import Channel
 from app.core.config import settings
 from app.services.channels.base import (
+    MAX_BYTES_ARCHIVO,
     MAX_BYTES_AUDIO,
+    ArchivoRecibido,
     AudioRecibido,
     CanalDeMensajeria,
     ClienteHttpCompartido,
@@ -182,6 +184,30 @@ class WhatsAppChannel(CanalDeMensajeria):
             return None
         mime_type = info.get("mime_type") or archivo.headers.get("content-type") or "audio/ogg"
         return AudioRecibido(datos=archivo.content, mime_type=mime_type)
+
+    async def descargar_archivo(self, media_id: str) -> ArchivoRecibido | None:
+        """Baja una foto o documento del cliente: Meta da primero la URL (vigente unos minutos) y después el archivo."""
+        if not self._credenciales_completas:
+            logger.error("WHATSAPP_ACCESS_TOKEN o WHATSAPP_PHONE_NUMBER_ID no están configurados.")
+            return None
+        headers = {"Authorization": f"Bearer {settings.WHATSAPP_ACCESS_TOKEN}"}
+        try:
+            respuesta = await self._cliente().get(
+                f"https://graph.facebook.com/{settings.WHATSAPP_API_VERSION}/{media_id}", headers=headers
+            )
+            respuesta.raise_for_status()
+            info = respuesta.json()
+            if int(info.get("file_size") or 0) > MAX_BYTES_ARCHIVO:
+                return None
+            archivo = await self._cliente().get(info["url"], headers=headers)
+            archivo.raise_for_status()
+        except (httpx.HTTPError, KeyError, ValueError) as e:
+            logger.error("No se pudo descargar el archivo %s de WhatsApp: %s", media_id, e)
+            return None
+        if len(archivo.content) > MAX_BYTES_ARCHIVO:
+            return None
+        mime_type = info.get("mime_type") or archivo.headers.get("content-type") or "application/octet-stream"
+        return ArchivoRecibido(datos=archivo.content, mime_type=mime_type)
 
     async def registrar_webhook(self) -> None:
         # WhatsApp no permite registrar el webhook por API: se configura a mano en el panel de Meta.

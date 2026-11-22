@@ -221,7 +221,8 @@ export function ImpresorasView() {
           type="button"
           onClick={() => void handleSave()}
           disabled={saving}
-          className="px-6 py-2.5 rounded-xl bg-black hover:bg-gray-800 text-white text-sm font-bold transition disabled:opacity-60"
+          style={{ backgroundColor: 'var(--primary-color, #18181b)' }}
+          className="px-6 py-2.5 rounded-xl hover:opacity-90 text-white text-sm font-bold transition disabled:opacity-60 shadow-xs"
         >
           {saving ? 'Guardando...' : 'Guardar configuración'}
         </button>

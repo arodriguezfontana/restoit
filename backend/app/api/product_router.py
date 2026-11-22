@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_admin
 from app.api.uploads import image_body
 from app.db.session import get_db
-from app.schemas.catalog_schemas import AdminProductResponse, ProductPayload
+from app.schemas.catalog_schemas import AdminProductResponse, ProductPayload, ProductPromotionSummary
 from app.schemas.ingredient_schemas import RecipeUpdate
 from app.services import catalog_service
 from app.services.ingredient_service import replace_recipe
@@ -69,3 +69,21 @@ def put_product_recipe(
     """Reemplaza la receta del producto: ingredientes y cantidades por unidad de producto."""
     items = [(item.ingredient_id, item.quantity) for item in payload.items]
     return AdminProductResponse.from_model(replace_recipe(db, product_id, items))
+
+
+@router.get("/{product_id}/promotions", dependencies=[Depends(get_current_admin)])
+def get_product_promotions(
+    product_id: int,
+    db: Session = Depends(get_db),
+) -> list[ProductPromotionSummary]:
+    promotions = catalog_service.get_product_promotions(db, product_id)
+    return [ProductPromotionSummary(id=promo.id, name=promo.name) for promo in promotions]
+
+
+@router.delete("/{product_id}", status_code=http_status.HTTP_204_NO_CONTENT, dependencies=[Depends(get_current_admin)])
+def delete_product(
+    product_id: int,
+    delete_promotions: bool = False,
+    db: Session = Depends(get_db),
+) -> None:
+    catalog_service.delete_product(db, product_id, delete_promotions=delete_promotions)

@@ -2,15 +2,13 @@ import type { ComponentProps } from 'react';
 import { ComandaCard } from '@/components/ComandaCard';
 import { SECTOR_CONFIG } from '@/types/order';
 import type { OrderStatus, SectorFilter } from '@/types/order';
-import type { BoardColumn, PendingFilter, TripsToStart } from '@/utils/orderBoard';
+import type { BoardColumn, TimingFilter, TripsToStart } from '@/utils/orderBoard';
 
 const COLUMN_LABELS: Record<OrderStatus, string> = {
-  Pendiente: 'Pendientes',
-  Confirmado: 'Confirmados',
+  Confirmado: 'En preparación',
   'En Camino': 'En Camino',
   'Listo para Retirar': 'Listo para Retirar',
   Finalizado: 'Finalizado',
-  Rechazado: 'Rechazado',
   Cancelado: 'Cancelado',
 };
 
@@ -29,7 +27,6 @@ function ModifiedBadge({ count }: { count: number }) {
 }
 
 function ColumnHeader({ column }: { column: BoardColumn }) {
-  const highlightsCount = column.status === 'Pendiente' && column.totalCount > 0;
   return (
     <div className="shrink-0 flex items-center justify-between pb-3 px-1 border-b border-gray-200/60 mb-2">
       <div className="flex items-center gap-2 min-w-0">
@@ -37,7 +34,7 @@ function ColumnHeader({ column }: { column: BoardColumn }) {
         {column.status === 'Confirmado' && column.modifiedCount > 0 && <ModifiedBadge count={column.modifiedCount} />}
       </div>
       <span
-        className={`text-xs font-bold px-2 py-0.5 rounded-full ${highlightsCount ? 'bg-amber-200 text-amber-900' : 'bg-gray-200 text-gray-800'}`}
+        className="text-xs font-bold px-2 py-0.5 rounded-full bg-gray-200 text-gray-800"
       >
         {column.totalCount}
       </span>
@@ -87,8 +84,8 @@ function TripsToStartPanel({ trips, dispatchingDriverId, onStartTrip }: TripsToS
   );
 }
 
-function PendingFilterTabs({ value, onChange }: { value: PendingFilter; onChange: (filter: PendingFilter) => void }) {
-  const tabClass = (filter: PendingFilter) =>
+function TimingFilterTabs({ value, onChange }: { value: TimingFilter; onChange: (filter: TimingFilter) => void }) {
+  const tabClass = (filter: TimingFilter) =>
     `flex-1 py-1 rounded-lg transition ${value === filter ? 'bg-white text-black font-bold shadow-xs' : 'text-gray-600 hover:text-black'}`;
   return (
     <div className="shrink-0 flex bg-gray-200/70 p-0.5 rounded-xl mb-3 text-[11px] font-medium">
@@ -141,8 +138,8 @@ interface OrderColumnProps {
   column: BoardColumn;
   selectedSector: SectorFilter;
   searchTerm: string;
-  pendingFilter: PendingFilter;
-  onPendingFilterChange: (filter: PendingFilter) => void;
+  timingFilter: TimingFilter;
+  onTimingFilterChange: (filter: TimingFilter) => void;
   tripsToStart: TripsToStart;
   dispatchingDriverId: number | null;
   onStartTrip: (driverId: number) => void;
@@ -155,8 +152,8 @@ export function OrderColumn({
   column,
   selectedSector,
   searchTerm,
-  pendingFilter,
-  onPendingFilterChange,
+  timingFilter,
+  onTimingFilterChange,
   tripsToStart,
   dispatchingDriverId,
   onStartTrip,
@@ -173,7 +170,7 @@ export function OrderColumn({
         <TripsToStartPanel trips={tripsToStart} dispatchingDriverId={dispatchingDriverId} onStartTrip={onStartTrip} />
       )}
 
-      {column.status === 'Pendiente' && <PendingFilterTabs value={pendingFilter} onChange={onPendingFilterChange} />}
+      {column.status === 'Confirmado' && <TimingFilterTabs value={timingFilter} onChange={onTimingFilterChange} />}
 
       <div className="space-y-3 min-h-[220px] lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
         {column.orders.length === 0 ? (

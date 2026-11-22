@@ -25,6 +25,7 @@ export function IngredientesView() {
   const [creating, setCreating] = useState(false);
 
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState<IngredientPayload>(EMPTY_INGREDIENT);
   const [savingEdit, setSavingEdit] = useState(false);
 
@@ -77,13 +78,14 @@ export function IngredientesView() {
   };
 
   const handleDelete = async (ingredient: Ingredient) => {
-    if (!window.confirm(`¿Eliminar el ingrediente "${ingredient.name}"?`)) return;
     setActionError(null);
     try {
       await deleteIngredient(ingredient.id);
+      setDeletingId(null);
       reload();
     } catch (err) {
       setActionError(getErrorMessage(err, 'No se pudo eliminar el ingrediente.'));
+      setDeletingId(null);
     }
   };
 
@@ -116,7 +118,8 @@ export function IngredientesView() {
           <button
             type="submit"
             disabled={creating}
-            className="bg-black text-white rounded-xl px-5 py-2 text-sm font-semibold hover:bg-gray-800 transition disabled:opacity-60"
+            style={{ backgroundColor: 'var(--primary-color, #18181b)' }}
+            className="text-white rounded-xl px-5 py-2 text-sm font-semibold hover:opacity-90 transition disabled:opacity-60"
           >
             {creating ? 'Agregando...' : 'Agregar'}
           </button>
@@ -139,12 +142,16 @@ export function IngredientesView() {
           <IngredientsTable
             ingredients={ingredients}
             editingId={editingId}
+            deletingId={deletingId}
             draft={editDraft}
             savingEdit={savingEdit}
             onDraftChange={setEditDraft}
             onStartEditing={startEditing}
             onSaveEdit={handleSaveEdit}
             onCancelEdit={() => setEditingId(null)}
+            onAskDelete={(ingredient) => setDeletingId(ingredient.id)}
+            onCancelDelete={() => setDeletingId(null)}
+            onConfirmDelete={handleDelete}
             onDelete={handleDelete}
           />
         )}

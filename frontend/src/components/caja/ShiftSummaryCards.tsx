@@ -11,14 +11,21 @@ function MoneyCard({ label, value, valueClass }: { label: string; value: string;
   );
 }
 
-function DigitalSales({ summary }: { summary?: CashShiftSummaryBreakdown | null }) {
+function DigitalSales({
+  summary,
+}: {
+  summary?: CashShiftSummaryBreakdown | null;
+}) {
+  const pendingTransfers = summary?.pending_transfers ?? 0;
   return (
     <div className="bg-gradient-to-r from-slate-50 to-gray-50 rounded-2xl border border-gray-200 p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-      <div className="space-y-1">
-        <div className="text-xs font-bold uppercase tracking-wider text-gray-500">
-          Ventas digitales del turno (no ingresan en caja física)
-        </div>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-700">
+      <div className="space-y-1.5">
+        <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Desglose por medio de pago</span>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-gray-700">
+          <span>
+            Efectivo: <strong className="text-gray-900">{formatCurrency(summary?.cash_sales ?? 0)}</strong>
+          </span>
+          <span>·</span>
           <span>
             MercadoPago: <strong className="text-gray-900">{formatCurrency(summary?.mercadopago_sales ?? 0)}</strong>
           </span>
@@ -30,24 +37,20 @@ function DigitalSales({ summary }: { summary?: CashShiftSummaryBreakdown | null 
           <span>
             Tarjeta: <strong className="text-gray-900">{formatCurrency(summary?.tarjeta_sales ?? 0)}</strong>
           </span>
-          {Boolean(summary?.other_digital_sales) && (
-            <>
-              <span>·</span>
-              <span>
-                Otros digitales: <strong className="text-gray-900">{formatCurrency(summary?.other_digital_sales ?? 0)}</strong>
-              </span>
-            </>
-          )}
         </div>
       </div>
 
       <div className="flex items-center gap-6 border-t md:border-t-0 md:border-l border-gray-200 pt-3 md:pt-0 md:pl-6 shrink-0">
         <div>
-          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Total digital</div>
-          <div className="text-sm font-bold text-gray-900">{formatCurrency(summary?.total_digital_sales ?? 0)}</div>
+          <div className="text-[10px] font-bold uppercase tracking-wider text-orange-600">Pendiente de cobro</div>
+          <div className="text-sm font-bold text-orange-600">{formatCurrency(pendingTransfers)}</div>
         </div>
         <div>
-          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Total facturado</div>
+          <div className="text-[10px] font-bold uppercase tracking-wider text-blue-600">Total digital</div>
+          <div className="text-sm font-bold text-blue-600">{formatCurrency(summary?.total_digital_sales ?? 0)}</div>
+        </div>
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-900">Total facturado</div>
           <div className="text-base font-extrabold text-gray-900">{formatCurrency(summary?.total_sales ?? 0)}</div>
         </div>
       </div>
@@ -55,9 +58,14 @@ function DigitalSales({ summary }: { summary?: CashShiftSummaryBreakdown | null 
   );
 }
 
+interface ShiftSummaryCardsProps {
+  shift: CashShiftDetail;
+}
+
 /** Datos del turno abierto, el dinero físico de la caja y lo cobrado por medios digitales. */
-export function ShiftSummaryCards({ shift }: { shift: CashShiftDetail }) {
+export function ShiftSummaryCards({ shift }: ShiftSummaryCardsProps) {
   const summary = shift.summary;
+
   return (
     <>
       <div className="bg-white rounded-2xl border border-gray-200 p-4 flex flex-wrap items-center justify-between gap-4 text-xs text-gray-600">
@@ -88,8 +96,8 @@ export function ShiftSummaryCards({ shift }: { shift: CashShiftDetail }) {
           value={`-${formatCurrency(summary?.manual_expense ?? 0)}`}
           valueClass="text-rose-600"
         />
-        <div className="col-span-2 md:col-span-1 bg-zinc-900 text-white rounded-2xl p-4 shadow-md flex flex-col justify-between">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-300">Caja teórica esperada</span>
+        <div className="col-span-2 md:col-span-1 bg-emerald-600 text-white rounded-2xl p-4 shadow-md flex flex-col justify-between">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-100">Caja teórica esperada</span>
           <span className="text-xl md:text-2xl font-black text-white mt-2">
             {formatCurrency(summary?.expected_cash ?? 0)}
           </span>

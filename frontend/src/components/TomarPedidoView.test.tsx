@@ -6,6 +6,7 @@ import * as clientService from '@/services/clientService';
 import * as menuService from '@/services/menuService';
 import * as orderService from '@/services/orderService';
 import * as promotionService from '@/services/promotionService';
+import * as storeConfigService from '@/services/storeConfigService';
 import type { Promotion } from '@/types/promotion';
 import { COCA, FUGAZZETA, MUZZA } from '@/test/utils';
 
@@ -13,11 +14,15 @@ vi.mock('@/services/menuService');
 vi.mock('@/services/orderService');
 vi.mock('@/services/clientService');
 vi.mock('@/services/promotionService');
+vi.mock('@/services/storeConfigService');
 
 const menu = vi.mocked(menuService);
 const orders = vi.mocked(orderService);
 const clients = vi.mocked(clientService);
 const promos = vi.mocked(promotionService);
+const storeConfig = vi.mocked(storeConfigService);
+
+const STORE = { store_name: 'RestoIT', address: null, contact_phone: null, logo_url: null, theme_color: 'black' as const };
 
 const PROMO_COMBO: Promotion = {
   id: 88,
@@ -57,6 +62,13 @@ async function renderView() {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  storeConfig.fetchStoreConfig.mockResolvedValue({
+    ...STORE,
+    accepts_transfer: true,
+    accepts_card: true,
+    accepts_mercadopago: true,
+    mercadopago_available: true,
+  });
   menu.fetchMenuProducts.mockResolvedValue([MUZZA, FUGAZZETA, COCA]);
   clients.lookupClientByPhone.mockResolvedValue(null);
   promos.fetchAvailablePromotions.mockResolvedValue([]);
@@ -166,12 +178,42 @@ describe('TomarPedidoView', () => {
     expect(screen.getByRole('radio', { name: 'Efectivo' })).toHaveAttribute('aria-checked', 'false');
   });
 
+  it('con transferencia adjunta el comprobante al registrar el pedido', async () => {
+    orders.uploadPaymentProof.mockResolvedValue(null);
+    const user = await renderView();
+
+    await user.type(screen.getByLabelText('Teléfono *'), '11 4444-5555');
+    await user.type(screen.getByLabelText('Nombre *'), 'Paula');
+    await user.click(product(/Pizza Muzzarella/));
+    await screen.findByRole('radio', { name: 'Transferencia' });
+    await user.click(screen.getByRole('radio', { name: 'Transferencia' }));
+    const proof = new File(['x'], 'comprobante.png', { type: 'image/png' });
+    await user.upload(screen.getByLabelText(/Comprobante de la transferencia/), proof);
+    await user.click(screen.getByRole('button', { name: 'Confirmar pedido' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent('registrado correctamente');
+    expect(orders.uploadPaymentProof).toHaveBeenCalledWith(expect.any(Number), proof);
+  });
+
+  it('con efectivo o tarjeta se puede registrar como ya cobrado; con MercadoPago no', async () => {
+    const user = await renderView();
+    await screen.findByRole('radio', { name: 'Tarjeta' });
+
+    await user.click(screen.getByRole('radio', { name: 'Tarjeta' }));
+    expect(screen.getByRole('checkbox', { name: 'Ya abonado' })).toBeInTheDocument();
+    await user.click(screen.getByRole('radio', { name: 'MercadoPago' }));
+    expect(screen.queryByRole('checkbox', { name: 'Ya abonado' })).not.toBeInTheDocument();
+  });
+
   it('un segundo clic en el método de pago lo deja sin especificar', async () => {
     const user = await renderView();
 
-    // Solo se ofrecen Efectivo y MercadoPago.
+    // Se ofrecen los medios que el local habilitó.
+    await screen.findByRole('radio', { name: 'Tarjeta' });
     expect(screen.getAllByRole('radio', { name: /Efectivo|MercadoPago|Transferencia|Tarjeta/ }).map((r) => r.textContent)).toEqual([
       'Efectivo',
+      'Transferencia',
+      'Tarjeta',
       'MercadoPago',
     ]);
 
@@ -179,6 +221,16 @@ describe('TomarPedidoView', () => {
     expect(screen.getByRole('radio', { name: 'MercadoPago' })).toHaveAttribute('aria-checked', 'true');
     await user.click(screen.getByRole('radio', { name: 'MercadoPago' }));
     expect(screen.getByRole('radio', { name: 'MercadoPago' })).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('solo ofrece los medios de pago que el local habilitó', async () => {
+    storeConfig.fetchStoreConfig.mockResolvedValue({ ...STORE, accepts_cash: false, accepts_transfer: true });
+    const user = await renderView();
+
+    await screen.findByRole('radio', { name: 'Transferencia' });
+    expect(screen.queryByRole('radio', { name: 'Efectivo' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('radio', { name: 'MercadoPago' })).not.toBeInTheDocument();
+    expect(user).toBeDefined();
   });
 
   it('autocompleta los datos de un cliente registrado y avisa si se modifican', async () => {
@@ -259,17 +311,16 @@ describe('TomarPedidoView', () => {
       const user = userEvent.setup();
 
       // Se muestran el botón de categoría "Promociones" y la sección con la tarjeta
-      expect(await screen.findByRole('button', { name: /Promociones/ })).toBeInTheDocument();
-      expect(screen.getByText('Promociones vigentes')).toBeInTheDocument();
+      expect(await screen.findByRole('button', { name: /^Promociones$/ })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Promociones' })).toBeInTheDocument();
       const promoBtn = screen.getByRole('button', { name: /Combo Pizzeros/ });
       expect(promoBtn).toBeInTheDocument();
 
       // Agregar promo al pedido
       await user.click(promoBtn);
 
-      // Aparece en el resumen con badge Promo y su precio
+      // Aparece en el resumen con su precio
       expect(within(summary()).getByText('Combo Pizzeros')).toBeInTheDocument();
-      expect(within(summary()).getByText('Promo')).toBeInTheDocument();
       expect(total()).toBe('$ 15.000,00');
 
       // Sumar otra unidad de la promo

@@ -1,5 +1,5 @@
 import { api } from './api';
-import type { AdminCategory, AdminProduct, CategoryPayload, ProductPayload } from '@/types/catalog';
+import type { AdminCategory, AdminProduct, CategoryPayload, ProductPayload, ProductPromotionSummary } from '@/types/catalog';
 
 /** Todos los productos (también los no disponibles y los sin categoría) con su receta. */
 export async function fetchAdminProducts(): Promise<AdminProduct[]> {
@@ -49,4 +49,15 @@ export async function updateCategory(id: number, payload: CategoryPayload): Prom
 /** Sus productos quedan sin categoría (no se borran). */
 export async function deleteCategory(id: number): Promise<void> {
   await api.delete(`/categories/${id}`);
+}
+
+export async function fetchProductPromotions(productId: number): Promise<ProductPromotionSummary[]> {
+  const { data } = await api.get<ProductPromotionSummary[]>(`/products/${productId}/promotions`);
+  return data;
+}
+
+export async function deleteProduct(productId: number, deletePromotions = false): Promise<void> {
+  await api.delete(`/products/${productId}`, {
+    params: { delete_promotions: deletePromotions },
+  });
 }

@@ -16,6 +16,7 @@ from app.services.chat_memory import INACTIVIDAD_PARA_REINICIAR, SesionChat
 from app.services.chat_prompt import SYSTEM_PROMPT
 from app.services.gemini_models import modelos
 from app.services.human_handoff import derivaciones
+from app.services.payment_methods_service import describe_for_bot
 from app.services.tools.client_tools import MARCA_NOMBRE_GUARDADO, guardar_nombre_del_cliente, limpiar_nombre
 from app.services.tools.handoff_tools import derivar_a_empleado
 from app.services.tools.horario_tools import obtener_estado_del_local
@@ -72,6 +73,20 @@ def _texto_de_la_respuesta(respuesta: AIMessage) -> str:
     else:
         texto = str(contenido)
     return texto if texto.strip() else MENSAJE_RESPUESTA_VACIA
+
+
+def _estado_y_medios_de_pago() -> str:
+    """El estado del local (horarios) seguido de los medios de pago que acepta, que cambian con la configuración."""
+    db = SessionLocal()
+    try:
+        medios = describe_for_bot(db)
+    except Exception:
+        logger.exception("No se pudieron consultar los medios de pago del local.")
+        medios = ""
+    finally:
+        db.close()
+    estado = obtener_estado_del_local()
+    return "\n\n".join(parte for parte in (estado, medios) if parte)
 
 
 class ChatService:
@@ -314,7 +329,7 @@ class ChatService:
         return respuesta_directa
 
     async def _responder(self, sesion: SesionChat, session_id: str) -> str:
-        contexto = (obtener_menu_actual(), obtener_promociones_actuales(), obtener_estado_del_local())
+        contexto = (obtener_menu_actual(), obtener_promociones_actuales(), _estado_y_medios_de_pago())
         # Primer mensaje de la conversación: si ya trae el pedido, el resumen sale con un saludo (ver _con_saludo).
         primer_turno = not any(isinstance(m, AIMessage) for m in sesion.historial)
         respuesta = None

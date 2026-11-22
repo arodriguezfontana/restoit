@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ControlCajaView } from '@/components/ControlCajaView';
@@ -185,7 +185,7 @@ describe('ControlCajaView', () => {
     const cierreTab = screen.getByRole('button', { name: /Cierre de caja/i });
     await user.click(cierreTab);
 
-    expect(screen.getByText('Arqueo y cierre de caja')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Cierre de caja' })).toBeInTheDocument();
 
     const realInput = screen.getByLabelText(/Monto real contado en efectivo/i);
     // Caja teórica es 13500. Si ponemos 14000, hay sobrante de 500
@@ -232,6 +232,210 @@ describe('ControlCajaView', () => {
 
     await waitFor(() => {
       expect(screen.queryByText('Detalle del turno #1')).not.toBeInTheDocument();
+    });
+  });
+
+  it('categorías manuales incluyen Pago a empleado, muestra Venta (Transferencia) y Venta (Tarjeta) sin columna Acción y sin botones en ventas digitales', async () => {
+    const shiftConDigitales: CashShiftDetail = {
+      ...MOCK_OPEN_SHIFT,
+      movements: [
+        {
+          id: 201,
+          cash_shift_id: 1,
+          type: 'ingreso',
+          amount: 4500,
+          category: 'Transferencia',
+          description: 'Transferencia cliente',
+          created_at: '2026-10-30T10:20:00Z',
+        },
+        {
+          id: 202,
+          cash_shift_id: 1,
+          type: 'ingreso',
+          amount: 3200,
+          category: 'Tarjeta',
+          description: 'Tarjeta débito',
+          created_at: '2026-10-30T10:25:00Z',
+        },
+      ],
+    };
+
+    service.fetchCurrentCashShift.mockResolvedValue({ is_open: true, shift: shiftConDigitales });
+    render(<ControlCajaView />);
+
+    // 1. Pago a empleado está en el select
+    const categorySelect = await screen.findByLabelText(/Categoría \*/i);
+    expect(within(categorySelect).getByRole('option', { name: 'Pago a empleado' })).toBeInTheDocument();
+
+    // 2. Movimientos se muestran como Venta (Transferencia) y Venta (Tarjeta) con badge Venta
+    expect(screen.getByText('Venta (Transferencia)')).toBeInTheDocument();
+    expect(screen.getByText('Venta (Tarjeta)')).toBeInTheDocument();
+    const ventaBadges = screen.getAllByText('Venta');
+    expect(ventaBadges.length).toBeGreaterThanOrEqual(2);
+
+    // 3. No existe la columna Acción ni botones de anulación
+    expect(screen.queryByText('Acción')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Anular movimiento')).not.toBeInTheDocument();
+
+    // 4. En Ventas digitales no hay botones de agregar transferencia o tarjeta
+    expect(screen.queryByRole('button', { name: '+ Transferencia' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '+ Tarjeta' })).not.toBeInTheDocument();
+  });
+
+  describe('US-62: Caja e historial consistentes con cada medio', () => {
+    it('el resumen del turno desglosa Efectivo, MercadoPago, Transferencia y Tarjeta, y transferencias sin confirmar como pendiente de cobro', async () => {
+      const shiftBreakdown: CashShiftDetail = {
+        ...MOCK_OPEN_SHIFT,
+        summary: {
+          initial_amount: 10000,
+          cash_sales: 5000,
+          mercadopago_sales: 3000,
+          transferencia_sales: 2000,
+          tarjeta_sales: 1500,
+          other_digital_sales: 0,
+          total_digital_sales: 6500,
+          total_sales: 11500,
+          manual_income: 0,
+          manual_expense: 0,
+          expected_cash: 15000, // 10000 + 5000 (no incluye MP, transferencia ni tarjeta)
+          pending_transfers: 4000, // transferencia sin confirmar
+          final_amount: null,
+          difference: null,
+          difference_type: null,
+          orders_count: 5,
+          movements_count: 0,
+        },
+      };
+
+      service.fetchCurrentCashShift.mockResolvedValue({ is_open: true, shift: shiftBreakdown });
+      render(<ControlCajaView />);
+
+      expect(await screen.findByText('Desglose por medio de pago')).toBeInTheDocument();
+      expect(screen.getByText(/Efectivo:/)).toBeInTheDocument();
+      expect(screen.getByText(/MercadoPago:/)).toBeInTheDocument();
+      expect(screen.getByText(/Transferencia:/)).toBeInTheDocument();
+      expect(screen.getByText(/Tarjeta:/)).toBeInTheDocument();
+      expect(screen.getByText('Pendiente de cobro')).toBeInTheDocument();
+      expect(screen.getByText(/\$ 4\.000,00/)).toBeInTheDocument();
+
+      // El efectivo esperado para el arqueo es 15.000,00 (no incluye los 6.500 de digitales ni los 4.000 de pendientes)
+      expect(screen.getByText('Caja teórica esperada').nextElementSibling?.textContent).toContain('15.000,00');
+    });
+
+    it('el detalle de un turno cerrado desglosa Efectivo, MercadoPago, Transferencia, Tarjeta y Pendiente de cobro', async () => {
+      const closedShiftDetail: CashShiftDetail = {
+        ...MOCK_OPEN_SHIFT,
+        id: 99,
+        status: 'cerrada',
+        summary: {
+          initial_amount: 10000,
+          cash_sales: 7000,
+          mercadopago_sales: 4000,
+          transferencia_sales: 3000,
+          tarjeta_sales: 2500,
+          other_digital_sales: 0,
+          total_digital_sales: 9500,
+          total_sales: 16500,
+          manual_income: 0,
+          manual_expense: 0,
+          expected_cash: 17000,
+          pending_transfers: 1200,
+          final_amount: 17000,
+          difference: 0,
+          difference_type: 'exacta',
+          orders_count: 6,
+          movements_count: 0,
+        },
+      };
+
+      service.fetchCurrentCashShift.mockResolvedValue({ is_open: true, shift: MOCK_OPEN_SHIFT });
+      service.fetchCashShiftsHistory.mockResolvedValue({ items: [closedShiftDetail], total: 1 });
+      service.fetchCashShiftDetail.mockResolvedValue(closedShiftDetail);
+
+      const user = userEvent.setup();
+      render(<ControlCajaView />);
+
+      // Abrir pestaña de historial
+      const historialTab = await screen.findByRole('button', { name: 'Historial de turnos' });
+      await user.click(historialTab);
+
+      // Ver detalle del turno
+      const verDetalleBtn = await screen.findByRole('button', { name: /Ver detalle/i });
+      await user.click(verDetalleBtn);
+
+      const modalHeading = await screen.findByRole('heading', { name: /Detalle del turno #99/i });
+      expect(modalHeading).toBeInTheDocument();
+      const modal = modalHeading.closest('div.bg-white') as HTMLElement;
+
+      expect(within(modal).getByText('Desglose por medio de pago')).toBeInTheDocument();
+      expect(within(modal).getByText('Transferencia')).toBeInTheDocument();
+      expect(within(modal).getByText('Tarjeta')).toBeInTheDocument();
+      expect(within(modal).getByText(/Pendiente de cobro:/)).toBeInTheDocument();
+    });
+
+    it('los movimientos muestran el medio real de cada pedido incluyendo pagos mixtos y transferencias pendientes', async () => {
+      const shiftConPedidos: CashShiftDetail = {
+        ...MOCK_OPEN_SHIFT,
+        movements: [],
+        orders: [
+          {
+            id: 1,
+            shift_number: 10,
+            customer_name: 'Juan Perez',
+            total_amount: 5000,
+            payment_method: 'tarjeta',
+            is_billable: true,
+            is_paid: true,
+            status: 'Finalizado',
+            created_at: '2026-10-30T10:05:00Z',
+          },
+          {
+            id: 2,
+            shift_number: 11,
+            customer_name: 'Maria Lopez',
+            total_amount: 3500,
+            payment_method: 'transferencia',
+            is_billable: true,
+            is_paid: false, // transferencia pendiente
+            status: 'Confirmado',
+            created_at: '2026-10-30T10:10:00Z',
+          },
+          {
+            id: 3,
+            shift_number: 12,
+            customer_name: 'Carlos Ruiz',
+            total_amount: 6000,
+            payment_method: 'mercadopago',
+            balance_payment_method: 'efectivo',
+            paid_amount: 4000,
+            is_billable: true,
+            is_paid: true,
+            status: 'Finalizado',
+            created_at: '2026-10-30T10:15:00Z',
+          },
+          {
+            id: 4,
+            shift_number: 13,
+            customer_name: 'Anonimo',
+            total_amount: 2000,
+            payment_method: null,
+            is_billable: true,
+            is_paid: false,
+            status: 'Confirmado',
+            created_at: '2026-10-30T10:20:00Z',
+          },
+        ],
+      };
+
+      service.fetchCurrentCashShift.mockResolvedValue({ is_open: true, shift: shiftConPedidos });
+      render(<ControlCajaView />);
+
+      expect(await screen.findByText('Venta (Tarjeta)')).toBeInTheDocument();
+      expect(screen.getByText('Venta (Transferencia)')).toBeInTheDocument();
+      expect(screen.getByText('Venta (MercadoPago + Efectivo)')).toBeInTheDocument();
+      expect(screen.getByText('Venta (No informado)')).toBeInTheDocument();
+      // Transferencia pendiente de cobro en descripción
+      expect(screen.getByText(/Pedido #11 · Maria Lopez · Pendiente de cobro/)).toBeInTheDocument();
     });
   });
 });

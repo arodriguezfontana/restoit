@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { groupWeeklySchedule, summarizeWeeklySchedule } from '@/utils/businessHours';
 import { formatCurrency } from '@/utils/currency';
+import { formatOrderPaymentMethod } from '@/utils/paymentMethods';
 import { PHONE_PATTERN, validateCustomerData } from '@/utils/customerValidation';
 import { getErrorMessage } from '@/utils/errors';
 import { parseDateInputValue, presetLabel, rangeForPreset } from '@/utils/dateRange';
-import { ALERT_THRESHOLD_MS, formatElapsed, getDelayLevel } from '@/utils/elapsedTime';
+import { formatElapsed, getDelayLevel } from '@/utils/elapsedTime';
 import { groupByCategory } from '@/utils/productGrouping';
 import { COCA, FUGAZZETA, MUZZA, makeOrder } from '@/test/utils';
 
@@ -106,7 +107,6 @@ describe('elapsedTime', () => {
     expect(formatElapsed(0)).toBe('0min');
     expect(formatElapsed(125000)).toBe('2min');
     expect(formatElapsed(-5000)).toBe('0min');
-    expect(ALERT_THRESHOLD_MS).toBe(2 * 60 * 1000);
   });
 
   it('un pedido para ahora pasa a "por vencer" en el último 25% del tiempo estimado y luego a "atrasado"', () => {
@@ -128,7 +128,7 @@ describe('elapsedTime', () => {
     expect(getDelayLevel(order, at(121))).toBe('late');
   });
 
-  it.each(['Pendiente', 'Listo para Retirar', 'Finalizado', 'Rechazado'] as const)(
+  it.each(['Listo para Retirar', 'Finalizado', 'Cancelado'] as const)(
     'no aplica a pedidos en estado %s',
     (status) => {
       expect(getDelayLevel(makeOrder({ status, estimated_minutes: 30 }), Date.now())).toBeNull();
@@ -192,6 +192,58 @@ describe('groupWeeklySchedule', () => {
 
   it('devuelve una lista vacía si no hay franjas', () => {
     expect(groupWeeklySchedule([])).toEqual([]);
+  });
+});
+
+describe('formatOrderPaymentMethod', () => {
+  it('devuelve No informado si no hay orden o medio de pago', () => {
+    expect(formatOrderPaymentMethod(null)).toBe('No informado');
+    expect(formatOrderPaymentMethod(undefined)).toBe('No informado');
+    expect(formatOrderPaymentMethod({ payment_method: null })).toBe('No informado');
+    expect(formatOrderPaymentMethod({ payment_method: '' })).toBe('No informado');
+  });
+
+  it('formatea medios individuales estándar', () => {
+    expect(formatOrderPaymentMethod({ payment_method: 'efectivo' })).toBe('Efectivo');
+    expect(formatOrderPaymentMethod({ payment_method: 'mercadopago' })).toBe('MercadoPago');
+    expect(formatOrderPaymentMethod({ payment_method: 'transferencia' })).toBe('Transferencia');
+    expect(formatOrderPaymentMethod({ payment_method: 'tarjeta' })).toBe('Tarjeta');
+  });
+
+  it('formatea pagos mixtos cuando hay balance_payment_method distinto y paid_amount > 0', () => {
+    expect(
+      formatOrderPaymentMethod({
+        payment_method: 'mercadopago',
+        balance_payment_method: 'efectivo',
+        paid_amount: 3000,
+      })
+    ).toBe('MercadoPago + Efectivo');
+
+    expect(
+      formatOrderPaymentMethod({
+        payment_method: 'efectivo',
+        balance_payment_method: 'transferencia',
+        paid_amount: 2500,
+      })
+    ).toBe('Efectivo + Transferencia');
+  });
+
+  it('no duplica el medio si es el mismo o si no hay monto abonado aún', () => {
+    expect(
+      formatOrderPaymentMethod({
+        payment_method: 'tarjeta',
+        balance_payment_method: 'tarjeta',
+        paid_amount: 1000,
+      })
+    ).toBe('Tarjeta');
+
+    expect(
+      formatOrderPaymentMethod({
+        payment_method: 'mercadopago',
+        balance_payment_method: 'efectivo',
+        paid_amount: 0,
+      })
+    ).toBe('MercadoPago');
   });
 });
 

@@ -27,15 +27,16 @@ from app.models.order import (
 )
 from app.models.user import User
 from app.repositories import delivery_driver_repository, order_repository, product_repository, promotion_repository
-from app.services import cash_shift_service
+from app.services import cash_shift_service, coupon_service
 from app.services.business_hours_service import verificar_local_abierto
 from app.services.client_service import upsert_client
-from app.services.delivery_time_service import DelayEstimate, estimate_delay
+from app.services.delivery_time_service import estimate_delay
 from app.services.modifier_nlp import (
     extraer_modificadores_de_texto,
     filtrar_modificadores_para_producto,
     vincular_modificadores_con_db,
 )
+from app.services.payment_methods_service import ensure_payment_method_accepted
 
 logger = logging.getLogger(__name__)
 
@@ -63,15 +64,6 @@ class CounterPayment:
     is_paid: bool
 
 
-class ManualEstimateRequiredError(BusinessRuleError):
-    """Todavía no hay historial suficiente para estimar la demora de este pedido: la tiene que indicar el personal."""
-
-    def __init__(self):
-        super().__init__(
-            "Todavía no hay datos suficientes para estimar la demora de este pedido: indicá el tiempo estimado en minutos."
-        )
-
-
 class ScheduleTooEarlyError(BusinessRuleError):
     """El horario pedido es anterior al primero en el que el local puede tener listo el pedido."""
 
@@ -85,29 +77,26 @@ class ScheduleTooEarlyError(BusinessRuleError):
 
 
 def estimate_delay_minutes(db: Session) -> int:
-    """Demora estimada para un pedido nuevo según los pedidos en preparación (confirmados y todavía no
-    despachados ni listos para retirar)."""
-    in_progress = order_repository.count_with_status(db, OrderStatus.CONFIRMED)
-    return BASE_DELAY_MINUTES + in_progress * MINUTES_PER_ORDER_IN_PROGRESS
+    """Demora mínima con la que se puede tener listo un pedido nuevo (para validar los horarios de los programados):
+    una base más un tanto por cada pedido en preparación."""
+    return BASE_DELAY_MINUTES + current_queue_size(db) * MINUTES_PER_ORDER_IN_PROGRESS
 
 
 def current_queue_size(db: Session) -> int:
-    """Pedidos en cola: aceptados y todavía sin despachar ni listos para retirar."""
-    return order_repository.count_with_status(db, OrderStatus.CONFIRMED)
+    """Pedidos en cola: para ahora y todavía sin despachar ni listos para retirar."""
+    return order_repository.count_in_queue(db)
 
 
-def estimate_acceptance_delay(db: Session, order: Order) -> DelayEstimate:
-    """Cómo se va a estimar la demora de este pedido si se acepta ahora (inteligente o manual)."""
-    return estimate_delay(db, order.delivery_method, current_queue_size(db))
-
-
-def _delay_for_new_confirmed_order(db: Session, delivery_method: DeliveryMethod | str) -> tuple[int, EstimateSource]:
-    """Demora de un pedido que entra ya aceptado (web y mostrador), sin personal que la indique: la del historial
-    si alcanza y, si no, la estándar."""
-    estimate = estimate_delay(db, delivery_method, current_queue_size(db))
+def _assign_delay(db: Session, order: Order) -> None:
+    """Le asigna al pedido que entra la demora con la que se promete: la del historial si alcanza (y está activada),
+    si no la regla fija que corresponda. Sin ninguna de las dos no se informa demora. Los programados no llevan."""
+    if order.scheduled_for is not None:
+        return
+    estimate = estimate_delay(db, order.delivery_method, current_queue_size(db))
     if estimate.minutes is not None:
-        return estimate.minutes, EstimateSource.SMART
-    return estimate_delay_minutes(db), EstimateSource.DEFAULT
+        order.set_estimated_minutes(
+            estimate.minutes, EstimateSource.SMART if estimate.is_smart else EstimateSource.FIXED
+        )
 
 
 def _round_up_to_minute(moment: datetime) -> datetime:
@@ -257,7 +246,7 @@ def _new_order(db: Session, request: OrderRequest, source: OrderSource) -> Order
         customer_phone=request.customer_phone,
         notes=request.notes or None,
         source=source.value,
-        status=OrderStatus.PENDING.value,
+        status=OrderStatus.CONFIRMED.value,
     )
     order.set_delivery(request.delivery_method, request.shipping_address)
     parsed_items = _attach_notes_modifiers(db, request.notes, _products_for(db, request.items))
@@ -284,23 +273,35 @@ def create_web_order(
     request: OrderRequest,
     user: User | None = None,
     payment_method: PaymentMethod | str = PaymentMethod.CASH,
+    coupon_code: str | None = None,
 ) -> Order:
-    """Pedido hecho desde la web: se acepta automáticamente (entra 'Confirmado' con la demora estimada
-    del local, sin pasar por aceptar/rechazar) y queda sin abonar. El local puede cancelarlo después.
+    """Pedido hecho desde la web: entra directamente 'Confirmado' (con la demora estimada del local, si la hay) y
+    queda sin abonar. El local puede cancelarlo después.
 
     Se puede pedir como invitado. Si quien pide tiene sesión de cliente, el pedido queda asociado a su
     cuenta (los datos de contacto son siempre los enviados en el pedido). Solo se aceptan dentro del
     horario de atención del local (si no, lanza LocalCerradoError).
     """
     verificar_local_abierto(db)
+    ensure_payment_method_accepted(db, payment_method, request.delivery_method)
     order = _new_order(db, request, OrderSource.WEB)
     order.customer_id = user.id if user is not None and user.is_customer else None
-    order.status = OrderStatus.CONFIRMED.value
-    order.estimated_minutes, source = _delay_for_new_confirmed_order(db, order.delivery_method)
-    order.estimate_source = source.value
+    order.needs_attention = True
+    _assign_delay(db, order)
     order.payment_method = PaymentMethod(payment_method).value
     order.is_paid = False
     _attach_open_shift(db, order)
+
+    if coupon_code:
+        coupon_res = coupon_service.validate_web_coupon(db, coupon_code)
+        if coupon_res.valid:
+            discount_amount = round(order.total_amount * Decimal(str(coupon_res.discount_percentage)) / Decimal("100"), 2)
+            order.total_amount = max(Decimal("0"), order.total_amount - discount_amount)
+            coupon_note = f"[Cupón aplicado: {coupon_res.code} ({coupon_res.discount_percentage}% OFF - Ahorro: ${discount_amount:,.2f})]"
+            order.notes = f"{order.notes}\n{coupon_note}".strip() if order.notes else coupon_note
+        else:
+            raise BusinessRuleError(coupon_res.message or f"El cupón '{coupon_code}' no es válido.")
+
     return _save(db, order)
 
 
@@ -316,11 +317,10 @@ def create_counter_order(db: Session, request: OrderRequest, payment: CounterPay
     if not shift:
         raise BusinessRuleError("No se pueden tomar ni facturar pedidos porque la caja no está abierta. Abrí la caja antes de continuar.")
 
+    ensure_payment_method_accepted(db, payment.method, request.delivery_method)
     order = _new_order(db, request, OrderSource.COUNTER)
     order.cash_shift_id = shift.id
-    order.status = OrderStatus.CONFIRMED.value
-    order.estimated_minutes, source = _delay_for_new_confirmed_order(db, order.delivery_method)
-    order.estimate_source = source.value
+    _assign_delay(db, order)
     order.payment_method = payment.method
     order.is_paid = payment.is_paid
     order = _save(db, order)
@@ -336,11 +336,15 @@ def create_bot_order(
     scheduled_for: datetime | None,
     payment_method: str | None = None,
 ) -> Order:
-    """Pedido confirmado por el cliente en el chat del bot (de cualquier canal): queda 'Pendiente' como los de la web."""
+    """Pedido confirmado por el cliente en el chat del bot (de cualquier canal): como los de la web, entra directamente
+    'Confirmado' (en preparación) con la demora que corresponda, sin pasar por una aceptación del local."""
+    ensure_payment_method_accepted(db, payment_method, request.delivery_method)
     order = _new_order(db, request, OrderSource.BOT)
     order.channel = Channel(channel).value if channel else None
     order.chat_id = chat_id
     order.scheduled_for = scheduled_for
+    order.needs_attention = True
+    _assign_delay(db, order)
     order.payment_method = payment_method
     order.is_paid = False
     _attach_open_shift(db, order)
@@ -404,33 +408,10 @@ def _find_active_driver(db: Session, delivery_driver_id: int) -> DeliveryDriver:
     return driver
 
 
-def _smart_estimate_for_acceptance(
-    db: Session, order: Order, new_status: OrderStatus | str, estimated_minutes: int | None
-) -> int | None:
-    """Demora del historial del local con la que se acepta un pedido pendiente cuando el personal no la indica.
-
-    Devuelve None si el pedido no se está aceptando (o ya trae demora); si todavía no hay historial suficiente,
-    la tiene que indicar el personal.
-    """
-    is_acceptance = (
-        OrderStatus(new_status) == OrderStatus.CONFIRMED
-        and order.status == OrderStatus.PENDING.value
-        and order.scheduled_for is None
-        and estimated_minutes is None
-    )
-    if not is_acceptance:
-        return None
-    estimate = estimate_acceptance_delay(db, order)
-    if not estimate.is_smart:
-        raise ManualEstimateRequiredError()
-    return estimate.minutes
-
-
 def change_order_status(
     db: Session,
     order_id: int,
     new_status: OrderStatus | str,
-    estimated_minutes: int | None = None,
     delivery_driver_id: int | None = None,
 ) -> Order:
     """Avanza el pedido al nuevo estado según las reglas de su ciclo de vida (ver Order.transition_to)."""
@@ -440,19 +421,10 @@ def change_order_status(
         _require_driver_change_allowed(order)
         driver = _find_active_driver(db, delivery_driver_id)
 
-    # Al aceptar el pedido la demora sale del historial del local; si todavía no alcanza, la indica el personal.
-    smart_minutes = _smart_estimate_for_acceptance(db, order, new_status, estimated_minutes)
-    estimate_source = None if smart_minutes is None else EstimateSource.SMART
-
     with transaction(db):
         if driver is not None:
             order.delivery_driver_id = driver.id
-        order.transition_to(
-            new_status,
-            estimated_minutes if smart_minutes is None else smart_minutes,
-            current_delay_minutes=estimate_delay_minutes(db),
-            estimate_source=estimate_source,
-        )
+        order.transition_to(new_status)
         if order.status == OrderStatus.COMPLETED.value and order.awaits_cash_payment:
             _collect_cash_payment(db, order)
     db.refresh(order)
@@ -494,15 +466,23 @@ def _require_open_shift_to_collect(db: Session, order: Order) -> None:
     order.cash_shift_id = shift.id
 
 
-def update_order_payment(db: Session, order_id: int, is_paid: bool) -> Order:
-    """Actualiza manualmente el estado de cobro de un pedido."""
+def update_order_payment(
+    db: Session,
+    order_id: int,
+    is_paid: bool | None = None,
+    payment_method: PaymentMethod | str | None = None,
+) -> Order:
+    """Actualiza manualmente el estado de cobro de un pedido o su medio de pago."""
     order = get_order(db, order_id)
-    with transaction(db):
-        if order.is_shift_closed:
-            _release_from_closed_shift(order, is_paid)
-        if is_paid and not order.cash_shift_id:
-            _require_open_shift_to_collect(db, order)
-        order.is_paid = is_paid
+    if payment_method is not None:
+        change_order_payment_method(db, order, payment_method)
+    if is_paid is not None:
+        with transaction(db):
+            if order.is_shift_closed:
+                _release_from_closed_shift(order, is_paid)
+            if is_paid and not order.cash_shift_id:
+                _require_open_shift_to_collect(db, order)
+            order.is_paid = is_paid
     db.refresh(order)
     return order
 
@@ -552,6 +532,7 @@ def add_items_to_order(db: Session, order: Order, items: list[tuple]) -> Decimal
 
 def change_order_payment_method(db: Session, order: Order, method: PaymentMethod | str) -> None:
     """Cambia el medio de pago del pedido (o el de la diferencia, si tiene un pago parcial). No toca a cocina."""
+    ensure_payment_method_accepted(db, method, order.delivery_method)
     with transaction(db):
         order.change_payment_method(method)
     db.refresh(order)
@@ -562,5 +543,23 @@ def acknowledge_kitchen_update(db: Session, order_id: int) -> Order:
     order = get_order(db, order_id)
     with transaction(db):
         order.kitchen_update_pending = False
+    db.refresh(order)
+    return order
+
+
+def acknowledge_new_order(db: Session, order_id: int) -> Order:
+    """El personal vio el pedido nuevo: se apaga su alerta sonora en el tablero."""
+    order = get_order(db, order_id)
+    with transaction(db):
+        order.needs_attention = False
+    db.refresh(order)
+    return order
+
+
+def update_estimated_minutes(db: Session, order_id: int, minutes: int) -> Order:
+    """El personal modifica a mano la demora de un pedido (queda como 'manual'). No afecta a los demás pedidos."""
+    order = get_order(db, order_id)
+    with transaction(db):
+        order.set_estimated_minutes(minutes)
     db.refresh(order)
     return order

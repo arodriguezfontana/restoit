@@ -5,6 +5,7 @@ import pytest
 from app.models.menu import Ingredient, Product, ProductIngredient
 from app.models.order import Order, OrderItem
 from app.services.ingredient_service import consumption_totals
+from app.services.store_config_service import get_or_create_store_config
 
 WEB_ORDERS_URL = "/api/v1/orders/web"
 
@@ -32,14 +33,15 @@ def test_crea_pedido_web_aceptado_automaticamente(public_client, db_session, pro
 
     assert response.status_code == 201
     body = response.json()
-    # Los pedidos web no pasan por aceptar/rechazar: entran confirmados con la demora estimada.
+    # Los pedidos web no pasan por aceptar/rechazar: entran confirmados (sin demora si no hay ninguna configurada).
     assert body["status"] == "Confirmado"
     assert body["total_amount"] == 2 * 8500.0 + 2500.0
 
     order = db_session.query(Order).filter(Order.id == body["id"]).one()
     assert order.source == "web"
     assert order.status == "Confirmado"
-    assert order.estimated_minutes == 15
+    assert order.estimated_minutes is None
+    assert order.needs_attention is True
     assert order.customer_phone == "1155551234"
     assert order.notes == "Tocar timbre 2B"
     assert order.shipping_address == "Calle Falsa 123"
@@ -222,13 +224,56 @@ def test_pedido_web_con_mercadopago_guarda_la_preferencia(public_client, db_sess
     assert body["payment_url"].endswith(order.mp_preference_id)
 
 
-@pytest.mark.parametrize("payment_method", ["tarjeta", "transferencia"])
-def test_pedido_web_rechaza_medios_de_pago_no_ofrecidos(public_client, products, payment_method):
+@pytest.mark.parametrize("payment_method", ["tarjeta", "transferencia", "mercadopago"])
+def test_pedido_web_rechaza_medios_de_pago_no_habilitados(public_client, db_session, products, payment_method):
+    config = get_or_create_store_config(db_session)
+    config.accepts_card = config.accepts_transfer = config.accepts_mercadopago = False
+    db_session.commit()
+
     response = public_client.post(
         WEB_ORDERS_URL, json=_payload([{"product_id": products["muzza"].id, "quantity": 1}], payment_method=payment_method)
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 400
+    assert "no acepta" in response.json()["detail"]
+
+
+def test_pedido_web_acepta_un_medio_habilitado(public_client, products):
+    response = public_client.post(
+        WEB_ORDERS_URL, json=_payload([{"product_id": products["muzza"].id, "quantity": 1}], payment_method="transferencia")
+    )
+
+    assert response.status_code == 201
+    assert response.json()["payment_method"] == "transferencia"
+
+
+def test_tarjeta_solo_en_retiro_se_rechaza_para_envio(public_client, db_session, products):
+    config = get_or_create_store_config(db_session)
+    config.card_applies_to = "pickup"
+    db_session.commit()
+    items = [{"product_id": products["muzza"].id, "quantity": 1}]
+
+    envio = public_client.post(WEB_ORDERS_URL, json=_payload(items, payment_method="tarjeta"))
+    retiro = public_client.post(
+        WEB_ORDERS_URL,
+        json={**_payload(items, payment_method="tarjeta"), "delivery_method": "retiro", "shipping_address": None},
+    )
+
+    assert envio.status_code == 400
+    assert retiro.status_code == 201
+
+
+def test_pedido_de_mostrador_rechaza_un_medio_no_habilitado(client, db_session, products, open_shift):
+    config = get_or_create_store_config(db_session)
+    config.accepts_card = False
+    db_session.commit()
+
+    response = client.post(
+        "/api/v1/orders/counter",
+        json={**_payload([{"product_id": products["muzza"].id, "quantity": 1}], payment_method="tarjeta"), "is_paid": True},
+    )
+
+    assert response.status_code == 400
 
 
 def test_pedido_web_pizza_mitad_y_mitad_cobra_gusto_mas_caro(public_client, client, db_session, products):

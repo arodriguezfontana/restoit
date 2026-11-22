@@ -9,10 +9,14 @@ from app.models.business_goal import BusinessGoal
 from app.models.business_hours import BusinessHours
 from app.models.cash_shift import CashMovement, CashShift
 from app.models.client import Client
+from app.models.coupon import Coupon
+from app.models.delay_rule import DelayRule
 from app.models.delivery_driver import DeliveryDriver, DeliveryTrip
+from app.models.driver_review import DriverReview
 from app.models.menu import Category, Ingredient, Product, ProductAllowedExtra, ProductImage, ProductIngredient
 from app.models.menu_image import MenuImage
 from app.models.order import Order, OrderItem, OrderStatusEvent
+from app.models.payment_proof import PaymentProof
 from app.models.printer import Printer
 from app.models.promotion import Promotion, PromotionImage, PromotionPhoto, PromotionProduct
 from app.models.security import PinLockout, SecurityAuditEvent
@@ -27,14 +31,18 @@ __all__ = [
     "CashShift",
     "Category",
     "Client",
+    "Coupon",
+    "DelayRule",
     "DeliveryDriver",
     "DeliveryTrip",
+    "DriverReview",
     "Ingredient",
     "MenuImage",
     "PinLockout",
     "Order",
     "OrderItem",
     "OrderStatusEvent",
+    "PaymentProof",
     "Printer",
     "Product",
     "ProductAllowedExtra",

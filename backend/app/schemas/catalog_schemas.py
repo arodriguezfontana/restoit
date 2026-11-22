@@ -108,6 +108,13 @@ class CategoryProductResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ProductPromotionSummary(BaseModel):
+    id: int
+    name: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class AdminCategoryResponse(BaseModel):
     id: int
     name: str
@@ -122,6 +129,9 @@ class AdminCategoryResponse(BaseModel):
             sector=category.sector or "cocina",
             products=[
                 CategoryProductResponse.model_validate(product)
-                for product in sorted(category.products, key=lambda p: p.name.lower())
+                for product in sorted(
+                    [p for p in category.products if not getattr(p, "is_archived", False)],
+                    key=lambda p: p.name.lower(),
+                )
             ],
         )

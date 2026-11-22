@@ -3,9 +3,10 @@ import type {
   AdminOrder,
   CounterOrderPayload,
   DeliveryTrip,
-  OrderDelayEstimate,
   OrderDetail,
   OrderStatus,
+  PaymentMethod,
+  PaymentProofInfo,
   PreparationSector,
   WebOrderCreated,
   WebOrderPayload,
@@ -39,21 +40,20 @@ export async function fetchOrderDetail(orderId: number, signal?: AbortSignal): P
   return data;
 }
 
-/** Cómo se va a estimar la demora si se acepta el pedido ahora (automática o manual). */
-export async function fetchOrderDelayEstimate(orderId: number, signal?: AbortSignal): Promise<OrderDelayEstimate> {
-  const { data } = await api.get<OrderDelayEstimate>(`/orders/${orderId}/estimate`, { signal });
+export async function updateOrderStatus(orderId: number, status: OrderStatus): Promise<AdminOrder> {
+  const { data } = await api.patch<AdminOrder>(`/orders/${orderId}/status`, { status });
   return data;
 }
 
-export async function updateOrderStatus(
-  orderId: number,
-  status: OrderStatus,
-  estimatedMinutes?: number
-): Promise<AdminOrder> {
-  const { data } = await api.patch<AdminOrder>(`/orders/${orderId}/status`, {
-    status,
-    ...(estimatedMinutes !== undefined ? { estimated_minutes: estimatedMinutes } : {}),
-  });
+/** El personal carga o modifica a mano la demora estimada de un pedido. */
+export async function updateOrderDelay(orderId: number, estimatedMinutes: number): Promise<AdminOrder> {
+  const { data } = await api.patch<AdminOrder>(`/orders/${orderId}/delay`, { estimated_minutes: estimatedMinutes });
+  return data;
+}
+
+/** El personal vio el pedido nuevo: se apaga su alerta sonora. */
+export async function markOrderSeen(orderId: number): Promise<AdminOrder> {
+  const { data } = await api.post<AdminOrder>(`/orders/${orderId}/seen`);
   return data;
 }
 
@@ -97,14 +97,16 @@ export async function assignDeliveryDriver(
   return data;
 }
 
-/** Actualiza manualmente el estado de cobro de un pedido (Abonado). */
+/** Actualiza manualmente el estado de cobro de un pedido (Abonado) o su medio de pago. */
 export async function updateOrderPayment(
   orderId: number,
-  isPaid: boolean = true
+  isPaid?: boolean,
+  paymentMethod?: PaymentMethod
 ): Promise<AdminOrder> {
-  const { data } = await api.patch<AdminOrder>(`/orders/${orderId}/payment`, {
-    is_paid: isPaid,
-  });
+  const payload: { is_paid?: boolean; payment_method?: PaymentMethod } = {};
+  if (isPaid !== undefined) payload.is_paid = isPaid;
+  if (paymentMethod !== undefined) payload.payment_method = paymentMethod;
+  const { data } = await api.patch<AdminOrder>(`/orders/${orderId}/payment`, payload);
   return data;
 }
 
@@ -138,3 +140,29 @@ export async function updateOrderSectorPrepared(
   return data;
 }
 
+
+/** Formatos y peso máximo del comprobante de una transferencia (los mismos que valida el servidor). */
+export const PROOF_ACCEPT = 'image/jpeg,image/png,image/webp,application/pdf';
+export const PROOF_MAX_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Adjunta (o reemplaza) el comprobante de una transferencia. El cliente de la web lo hace con la clave que recibió al
+ * hacer el pedido; el personal, con su sesión.
+ */
+export async function uploadPaymentProof(orderId: number, file: File, token?: string): Promise<PaymentProofInfo | null> {
+  const config = { headers: { 'Content-Type': file.type || 'application/octet-stream' }, timeout: 30000 };
+  const { data } = token
+    ? await api.put<AdminOrder>(`/orders/web/${orderId}/payment-proof`, file, { ...config, params: { token } })
+    : await api.put<AdminOrder>(`/orders/${orderId}/payment-proof`, file, config);
+  return data.payment_proof ?? null;
+}
+
+/** El archivo del comprobante (solo el personal). */
+export async function fetchPaymentProofFile(orderId: number): Promise<Blob> {
+  const { data } = await api.get<Blob>(`/orders/${orderId}/payment-proof`, { responseType: 'blob' });
+  return data;
+}
+
+export async function deletePaymentProof(orderId: number): Promise<void> {
+  await api.delete(`/orders/${orderId}/payment-proof`);
+}

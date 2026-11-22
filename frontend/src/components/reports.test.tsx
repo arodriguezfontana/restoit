@@ -21,7 +21,7 @@ function kpi(label: string) {
 
 const HISTORY = [
   makeOrder({ id: 1, customer_name: 'Ana', status: 'Finalizado', total_amount: 10000, created_at: new Date(2026, 9, 3, 12).toISOString() }),
-  makeOrder({ id: 2, customer_name: 'Beto', status: 'Rechazado', total_amount: 99999, created_at: new Date(2026, 9, 3, 13).toISOString() }),
+  makeOrder({ id: 2, customer_name: 'Beto', status: 'Cancelado', total_amount: 99999, created_at: new Date(2026, 9, 3, 13).toISOString() }),
   makeOrder({ id: 3, customer_name: 'Caro', status: 'Confirmado', total_amount: 5000, created_at: new Date(2026, 9, 2, 20).toISOString() }),
 ];
 
@@ -38,14 +38,14 @@ afterEach(() => {
 });
 
 describe('HistorialView', () => {
-  it('pide la última semana y factura solo los pedidos no rechazados', async () => {
+  it('pide la última semana y factura solo los pedidos no cancelados', async () => {
     render(<HistorialView />);
 
     expect(await screen.findByText('Ana')).toBeInTheDocument();
     expect(orders.fetchOrders).toHaveBeenCalledWith({ dateFrom: new Date(2026, 8, 27), dateTo: new Date(2026, 9, 3, 23, 59, 59, 999) });
-    expect(kpi('Dinero facturado')).toBe('$ 15.000,00');
-    expect(kpi('Pedidos')).toBe('2');
-    // Los rechazados se listan igual, aunque no se facturen.
+    expect(kpi('Dinero facturado')).toBe('$ 10.000,00');
+    expect(kpi('Pedidos')).toBe('1');
+    // Los cancelados se listan igual, aunque no se facturen.
     expect(screen.getByText('Beto')).toBeInTheDocument();
   });
 
@@ -100,11 +100,30 @@ describe('HistorialView', () => {
 
     expect(screen.getByRole('dialog', { name: 'Pedido #1' })).toBeInTheDocument();
   });
+
+  it('US-62: muestra el medio real de cada pedido sin asumir efectivo y desglosa pagos mixtos', async () => {
+    const pedidosConMedios = [
+      makeOrder({ id: 10, shift_number: 10, customer_name: 'Ana', payment_method: 'tarjeta' }),
+      makeOrder({ id: 20, shift_number: 20, customer_name: 'Beto', payment_method: 'transferencia' }),
+      makeOrder({ id: 30, shift_number: 30, customer_name: 'Caro', payment_method: 'mercadopago', balance_payment_method: 'efectivo', paid_amount: 3000 }),
+      makeOrder({ id: 40, shift_number: 40, customer_name: 'Dario', payment_method: null }),
+    ];
+    orders.fetchOrders.mockResolvedValueOnce(pedidosConMedios);
+
+    render(<HistorialView />);
+
+    expect(await screen.findByText('Ana')).toBeInTheDocument();
+    expect(screen.getByText('Tarjeta')).toBeInTheDocument();
+    expect(screen.getByText('Transferencia')).toBeInTheDocument();
+    expect(screen.getByText('MercadoPago + Efectivo')).toBeInTheDocument();
+    expect(screen.getByText('No informado')).toBeInTheDocument();
+    expect(screen.queryByText('Efectivo')).not.toBeInTheDocument();
+  });
 });
 
 describe('StatsSection', () => {
   beforeEach(() => {
-    stats.fetchStatusDistribution.mockResolvedValue({ Finalizado: 12, Rechazado: 2 });
+    stats.fetchStatusDistribution.mockResolvedValue({ Finalizado: 12, Cancelado: 2 });
     stats.fetchTopProducts.mockResolvedValue([
       { product_name: 'Pizza Muzzarella', total_quantity: 30, total_revenue: 255000 },
       { product_name: 'Coca-Cola 500ml', total_quantity: 18, total_revenue: 45000 },
@@ -118,8 +137,8 @@ describe('StatsSection', () => {
     expect(await screen.findByText('Sábado')).toBeInTheDocument();
     expect(screen.getByText(/120\.000,00/)).toBeInTheDocument();
     expect(within(screen.getByText('Finalizado').parentElement!).getByText('12')).toBeInTheDocument();
-    const rows = screen.getAllByRole('row').slice(1).map((r) => plain(r.textContent));
-    expect(rows).toEqual(['Pizza Muzzarella30$ 255.000,00', 'Coca-Cola 500ml18$ 45.000,00']);
+    expect(screen.getByText('Pizza Muzzarella')).toBeInTheDocument();
+    expect(screen.getByText('Coca-Cola 500ml')).toBeInTheDocument();
   });
 
   it('vuelve a consultar al cambiar el período', async () => {

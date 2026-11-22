@@ -3,10 +3,11 @@ import type { Product } from '@/types/order';
 import { useCart } from '@/hooks/useCart';
 import { ProductThumbnail } from '@/components/ProductThumbnail';
 import { formatCurrency } from '@/utils/currency';
+import { isPlainLineOf } from '@/utils/cart';
 
 export function ProductCard({ product }: { product: Product }) {
   const { items, addItem, updateQuantity } = useCart();
-  const cartItem = items.find((item) => item.product?.id === product.id);
+  const cartItem = items.find((item) => isPlainLineOf(item, product.id, undefined));
 
   return (
     <div className="bg-white rounded-2xl shadow-md p-4 flex gap-4">
@@ -20,9 +21,14 @@ export function ProductCard({ product }: { product: Product }) {
             {product.dietary_restrictions.map((restriction) => (
               <span
                 key={restriction}
-                className="rounded-full bg-gray-100 text-gray-600 text-xs px-2 py-0.5"
+                style={{
+                  backgroundColor: '#ffffff',
+                  borderColor: 'var(--primary-color, #18181b)',
+                  color: 'var(--primary-color, #18181b)',
+                }}
+                className="rounded-full border text-xs font-semibold px-2.5 py-0.5 shadow-2xs"
               >
-                {restriction}
+                {restriction.charAt(0).toUpperCase() + restriction.slice(1)}
               </span>
             ))}
           </div>

@@ -22,7 +22,6 @@ function SpeakerIcon({ muted }: { muted: boolean }) {
 }
 
 interface BoardToolbarProps {
-  isSimulating: boolean;
   /** Acceso rápido a la sección para cargar pedidos presenciales. */
   onTakeOrder?: () => void;
   /** Color del tema del local (para el botón de tomar pedido). */
@@ -33,15 +32,13 @@ interface BoardToolbarProps {
   onSearchChange: (value: string) => void;
   onSearchClear: () => void;
   onPageSizeChange: (size: number) => void;
-  onToggleSimulation: () => void;
   soundEnabled: boolean;
   soundSupported: boolean;
   onToggleSound: () => void;
 }
 
-/** Barra superior del tablero: título, tomar pedido, tamaño de página, simulación y alerta sonora. */
+/** Barra superior del tablero: título, tomar pedido, tamaño de página y alerta sonora. */
 export function BoardToolbar({
-  isSimulating,
   onTakeOrder,
   themeHex,
   pageSize,
@@ -49,7 +46,6 @@ export function BoardToolbar({
   onSearchChange,
   onSearchClear,
   onPageSizeChange,
-  onToggleSimulation,
   soundEnabled,
   soundSupported,
   onToggleSound,
@@ -58,10 +54,8 @@ export function BoardToolbar({
   return (
     <div className="shrink-0 flex flex-wrap items-center justify-between bg-white px-5 py-3 rounded-2xl shadow-xs border border-gray-100 gap-3">
       <div className="flex items-center gap-3">
-        <span className={`w-2.5 h-2.5 rounded-full ${isSimulating ? 'bg-purple-500' : 'bg-amber-500'} animate-pulse`}></span>
-        <span className="text-sm font-semibold text-gray-800">
-          {isSimulating ? 'Panel de Comandas (Modo Simulación)' : 'Panel de Comandas'}
-        </span>
+        <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
+        <span className="text-sm font-semibold text-gray-800">Panel de Comandas</span>
       </div>
 
       <div className="flex items-center gap-4">
@@ -118,17 +112,6 @@ export function BoardToolbar({
             </button>
           ))}
         </div>
-
-        {/* Herramienta de desarrollo para probar el tablero con muchos pedidos: no se incluye en producción. */}
-        {import.meta.env.DEV && (
-          <button
-            type="button"
-            onClick={onToggleSimulation}
-            className={`text-xs font-medium px-3 py-1.5 rounded-xl transition shadow-xs ${isSimulating ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'bg-gray-900 hover:bg-gray-800 text-white'}`}
-          >
-            {isSimulating ? 'Salir de Simulación' : 'Simular 50 Pedidos'}
-          </button>
-        )}
 
         <button
           type="button"

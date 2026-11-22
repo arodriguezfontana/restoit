@@ -1,19 +1,20 @@
 import logging
 from datetime import datetime
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
 from fastapi import status as http_status
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin, get_optional_current_user
+from app.api.uploads import image_body
 from app.db.session import get_db
-from app.models.order import OrderStatus, PaymentMethod
+from app.models.order import PaymentMethod
 from app.models.user import User
 from app.schemas.delivery_driver_schemas import OrderAssignDriverPayload
 from app.schemas.order_schemas import (
     CounterOrderCreate,
-    OrderDelayEstimateResponse,
+    OrderDelayUpdate,
     OrderDetailResponse,
     OrderItemPreparedUpdate,
     OrderPaymentUpdate,
@@ -26,12 +27,11 @@ from app.schemas.order_schemas import (
     WebOrderCreatedResponse,
 )
 from app.schemas.printer_schemas import PrintResult
-from app.services import delivery_trip_service, order_service, printer_service
+from app.services import delivery_trip_service, order_service, payment_proof_service, printer_service
 from app.services.channels import enviar_mensaje
 from app.services.mercadopago_service import (
     payment_received_message,
     reconcile_pending_payments,
-    start_chat_payment,
     start_web_payment,
 )
 from app.services.order_notification_service import OrderSnapshot, notify_order_status_change, notify_trip_dispatched
@@ -78,13 +78,17 @@ def create_order_from_web(
 ) -> WebOrderCreatedResponse:
     """Endpoint público: registra un pedido hecho desde la web del cliente (como invitado o con su cuenta).
 
-    Valida los productos contra el menú actual y toma los precios de la base. Queda 'Pendiente' y sin
+    Valida los productos contra el menú actual y toma los precios de la base. Entra 'Confirmado' y sin
     abonar. Si el cliente eligió MercadoPago, la respuesta incluye el link de pago (`payment_url`) al
     que la web lo redirige; el pago se acredita después por el webhook o al volver del checkout.
     """
     try:
         order = order_service.create_web_order(
-            db, payload.to_request(), user=current_user, payment_method=payload.payment_method
+            db,
+            payload.to_request(),
+            user=current_user,
+            payment_method=payload.payment_method,
+            coupon_code=payload.coupon_code,
         )
         payment_url = None
         if order.payment_method == PaymentMethod.MERCADOPAGO.value:
@@ -128,6 +132,53 @@ def reprint_order(
     return printer_service.print_order(db, order_service.get_order(db, order_id))
 
 
+@router.put("/web/{order_id}/payment-proof", status_code=http_status.HTTP_201_CREATED)
+def upload_web_payment_proof(
+    order_id: int,
+    token: str = Query(..., description="Clave que recibió el cliente al hacer el pedido"),
+    proof: bytes = Depends(image_body),
+    db: Session = Depends(get_db),
+) -> OrderResponse:
+    """Endpoint público: el cliente de la web adjunta (o reemplaza) el comprobante de su transferencia."""
+    payment_proof_service.require_valid_token(order_id, token)
+    order = order_service.get_order(db, order_id)
+    payment_proof_service.save_proof(db, order, proof)
+    return OrderResponse.from_model(order)
+
+
+@router.put(
+    "/{order_id}/payment-proof",
+    status_code=http_status.HTTP_201_CREATED,
+    dependencies=[Depends(get_current_admin)],
+)
+def upload_payment_proof(
+    order_id: int,
+    proof: bytes = Depends(image_body),
+    db: Session = Depends(get_db),
+) -> OrderResponse:
+    """Adjunta o reemplaza el comprobante de transferencia (JPG, PNG, WEBP o PDF de hasta 5 MB) mientras el pago no
+    esté confirmado. El cuerpo es el archivo, sin formulario."""
+    order = order_service.get_order(db, order_id)
+    payment_proof_service.save_proof(db, order, proof)
+    return OrderResponse.from_model(order)
+
+
+@router.get("/{order_id}/payment-proof", response_class=Response, dependencies=[Depends(get_current_admin)])
+def get_payment_proof_file(order_id: int, db: Session = Depends(get_db)) -> Response:
+    """El archivo del comprobante (mientras no venza)."""
+    proof = payment_proof_service.get_proof_file(db, order_id)
+    return Response(content=proof.data, media_type=proof.content_type, headers={"Cache-Control": "private, no-store"})
+
+
+@router.delete(
+    "/{order_id}/payment-proof",
+    status_code=http_status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(get_current_admin)],
+)
+def delete_payment_proof(order_id: int, db: Session = Depends(get_db)) -> None:
+    payment_proof_service.delete_proof(db, order_id)
+
+
 @router.get("/{order_id}", dependencies=[Depends(get_current_admin)])
 def get_order_detail(
     order_id: int,
@@ -154,28 +205,6 @@ def dispatch_delivery_trip(
     return TripResponse.from_model(trip, warning)
 
 
-@router.get(
-    "/{order_id}/estimate",
-    dependencies=[Depends(get_current_admin)],
-)
-def get_order_delay_estimate(
-    order_id: int,
-    db: Session = Depends(get_db),
-) -> OrderDelayEstimateResponse:
-    """Cómo se va a estimar la demora si se acepta el pedido ahora: automática (con el historial del local) o
-    manual, si todavía no hay datos suficientes para esa situación."""
-    order = order_service.get_order(db, order_id)
-    estimate = order_service.estimate_acceptance_delay(db, order)
-    return OrderDelayEstimateResponse(
-        mode=estimate.mode.value,
-        estimated_minutes=estimate.minutes,
-        samples=estimate.samples,
-        min_samples=estimate.min_samples,
-        queue_size=estimate.queue_size,
-        suggested_minutes=order_service.estimate_delay_minutes(db),
-    )
-
-
 @router.patch("/{order_id}/status", dependencies=[Depends(get_current_admin)])
 def update_order_status(
     order_id: int,
@@ -184,28 +213,28 @@ def update_order_status(
     db: Session = Depends(get_db),
 ) -> OrderResponse:
     """Avanza el pedido de estado según su ciclo de vida y le avisa al cliente por su canal de chat."""
-    previous_status = order_service.get_order(db, order_id).status
-    order = order_service.change_order_status(
-        db,
-        order_id,
-        status_update.status,
-        status_update.estimated_minutes,
-        status_update.delivery_driver_id,
-    )
-    # Los pedidos del chat se pagan una vez aceptados: así nadie paga un pedido que el local después rechaza.
-    payment_instructions = None
-    # Al aceptar un pedido pendiente la comanda va a cocina (los de mostrador ya se imprimieron al registrarlos).
-    just_confirmed = status_update.status == OrderStatus.CONFIRMED and previous_status == OrderStatus.PENDING.value
-    if status_update.status == OrderStatus.CONFIRMED:
-        payment_instructions = start_chat_payment(db, order, get_or_create_store_config(db))
-    background_tasks.add_task(
-        notify_order_status_change, OrderSnapshot.of(order), status_update.status, payment_instructions
-    )
-    response = OrderResponse.from_model(order)
-    if just_confirmed:
-        result = printer_service.print_order(db, order)
-        response.print_error = None if result.success else (result.message or "Error de impresión.")
-    return response
+    order = order_service.change_order_status(db, order_id, status_update.status, status_update.delivery_driver_id)
+    background_tasks.add_task(notify_order_status_change, OrderSnapshot.of(order), status_update.status)
+    return OrderResponse.from_model(order)
+
+
+@router.patch("/{order_id}/delay", dependencies=[Depends(get_current_admin)])
+def update_order_delay(
+    order_id: int,
+    payload: OrderDelayUpdate,
+    db: Session = Depends(get_db),
+) -> OrderResponse:
+    """El personal carga o modifica a mano la demora estimada de un pedido (queda como 'manual')."""
+    return OrderResponse.from_model(order_service.update_estimated_minutes(db, order_id, payload.estimated_minutes))
+
+
+@router.post("/{order_id}/seen", dependencies=[Depends(get_current_admin)])
+def mark_order_seen(
+    order_id: int,
+    db: Session = Depends(get_db),
+) -> OrderResponse:
+    """El personal vio el pedido nuevo: se apaga su alerta sonora del tablero."""
+    return OrderResponse.from_model(order_service.acknowledge_new_order(db, order_id))
 
 
 @router.patch("/{order_id}/delivery-driver", dependencies=[Depends(get_current_admin)])
@@ -226,8 +255,10 @@ def update_order_payment(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ) -> OrderResponse:
-    """Actualiza manualmente el estado de pago del pedido (Abonado)."""
-    order = order_service.update_order_payment(db, order_id, payload.is_paid)
+    """Actualiza manualmente el estado de pago del pedido (Abonado o cambio de medio)."""
+    order = order_service.update_order_payment(
+        db, order_id, is_paid=payload.is_paid, payment_method=payload.payment_method
+    )
     # En efectivo el cliente le paga en mano al local: ahí no hace falta avisarle que se registró el cobro.
     if order.is_paid and order.channel and order.chat_id and not order.is_cash_payment:
         mensaje = f"✅ ¡Recibimos el pago de tu pedido #{order.shift_number}! ¡Muchas gracias!"

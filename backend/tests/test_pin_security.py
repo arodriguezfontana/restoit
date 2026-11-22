@@ -38,7 +38,7 @@ def test_verificar_admin_pin_exitoso(client, db_session):
     assert response.status_code == 200
     data = response.json()
     assert "token" in data
-    assert data["expires_in"] == 300
+    assert data["expires_in"] == 900
 
     # Usar el token recibido para consultar estadísticas
     res_stats = client.get(

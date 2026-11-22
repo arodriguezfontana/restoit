@@ -74,7 +74,6 @@ export async function setOrderStatus(request: APIRequestContext, token: string, 
 
 /** Camino de cada estado activo hasta cerrarse, para dejar el tablero vacío. */
 const CLOSE_PATH: Record<string, string[]> = {
-  Pendiente: ['Rechazado'],
   Confirmado: ['En Camino', 'Finalizado'],
   'En Camino': ['Finalizado'],
   'Listo para Retirar': ['Finalizado'],
@@ -98,7 +97,7 @@ export async function clearBoard(request: APIRequestContext) {
 }
 
 /** Columna del tablero de comandas. */
-export function column(page: Page, title: 'Pendientes' | 'Confirmados' | 'En Camino' | 'Listo para Retirar'): Locator {
+export function column(page: Page, title: 'En preparación' | 'En Camino' | 'Listo para Retirar'): Locator {
   return page
     .getByRole('heading', { name: title, exact: true })
     .locator('xpath=ancestor::div[contains(@class, "rounded-2xl")][1]');

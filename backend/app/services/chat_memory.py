@@ -132,7 +132,7 @@ class SesionChat:
             cuando = f"para las {horario}{f' del {dia}' if dia else ''}" if horario else "para ahora"
             self.ultimo_pedido = (
                 f"{_describir_items(self.pedido_en_curso)} ({cuando}), "
-                "registrado y pendiente de que el local lo confirme"
+                "registrado y ya en preparación"
             )
         self.pedido_en_curso = None
         self.pedido_registrado_en_este_turno = True

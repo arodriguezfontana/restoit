@@ -139,6 +139,7 @@ class Product(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     price: Mapped[Decimal] = mapped_column(MoneyColumn, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
 
     preparation_time_minutes: Mapped[int] = mapped_column(Integer, default=10, nullable=False)
     dietary_restrictions: Mapped[Any] = mapped_column(JSON, default=list, nullable=False)
@@ -166,13 +167,13 @@ class Product(Base):
 
     @hybrid_property
     def is_available(self) -> bool:
-        """Se muestra en el menú (web y chatbot) y se puede pedir: está activo y tiene categoría."""
-        return bool(self.is_active) and self.category_id is not None
+        """Se muestra en el menú (web y chatbot) y se puede pedir: está activo, no archivado y tiene categoría."""
+        return bool(self.is_active) and not self.is_archived and self.category_id is not None
 
     @is_available.inplace.expression
     @classmethod
     def _is_available_expression(cls):
-        return and_(cls.is_active.is_(True), cls.category_id.isnot(None))
+        return and_(cls.is_active.is_(True), cls.is_archived.is_(False), cls.category_id.isnot(None))
 
     def update_details(
         self,

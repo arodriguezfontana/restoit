@@ -49,11 +49,15 @@ def find_available_containing(db: Session, text: str) -> list[Product]:
 
 def _with_admin_details(db: Session) -> Query:
     """Con todo lo que muestra el panel: categoría, receta e imagen."""
-    return db.query(Product).options(
-        joinedload(Product.category),
-        joinedload(Product.recipe_items).joinedload(ProductIngredient.ingredient),
-        selectinload(Product.allowed_extra_items).joinedload(ProductAllowedExtra.ingredient),
-        selectinload(Product.image),
+    return (
+        db.query(Product)
+        .options(
+            joinedload(Product.category),
+            joinedload(Product.recipe_items).joinedload(ProductIngredient.ingredient),
+            selectinload(Product.allowed_extra_items).joinedload(ProductAllowedExtra.ingredient),
+            selectinload(Product.image),
+        )
+        .filter(Product.is_archived.is_(False))
     )
 
 

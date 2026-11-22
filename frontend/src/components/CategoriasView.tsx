@@ -24,6 +24,7 @@ export function CategoriasView() {
   const { categories = [], products = [] } = data ?? {};
   const [actionError, setActionError] = useState<string | null>(null);
   const [categoryForm, setCategoryForm] = useState<CategoryForm>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const { message: toastMessage, show: showToast } = useToast();
 
   const handleSave = async (payload: CategoryPayload) => {
@@ -36,21 +37,15 @@ export function CategoriasView() {
   };
 
   const handleDelete = async (category: AdminCategory) => {
-    const count = category.products.length;
-    const warning =
-      count === 0
-        ? ''
-        : count === 1
-          ? ' Su producto quedará sin categoría y no se mostrará en el menú.'
-          : ` Sus ${count} productos quedarán sin categoría y no se mostrarán en el menú.`;
-    if (!window.confirm(`¿Eliminar la categoría "${category.name}"?${warning}`)) return;
     setActionError(null);
     try {
       await deleteCategory(category.id);
+      setDeletingId(null);
       reload();
       showToast(`Se eliminó la categoría ${category.name}.`);
     } catch (err) {
       setActionError(getErrorMessage(err, 'No se pudo eliminar la categoría.'));
+      setDeletingId(null);
     }
   };
 
@@ -69,14 +64,15 @@ export function CategoriasView() {
           type="button"
           onClick={() => setCategoryForm({ category: null })}
           disabled={loading}
-          className="bg-black text-white rounded-xl px-5 py-2 text-sm font-semibold hover:bg-gray-800 transition disabled:opacity-60 whitespace-nowrap"
+          style={{ backgroundColor: 'var(--primary-color, #18181b)' }}
+          className="text-white rounded-xl px-5 py-2 text-sm font-semibold hover:opacity-90 transition disabled:opacity-60 whitespace-nowrap"
         >
           + Nueva categoría
         </button>
       </div>
 
       {withoutCategory.length > 0 && (
-        <div className="shrink-0 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 px-4 py-3 text-sm">
+        <div className="shrink-0 rounded-xl bg-gray-50 text-gray-700 border border-gray-200 px-4 py-3 text-sm">
           Sin categoría (no se muestran en el menú):{' '}
           <strong>{withoutCategory.map((product) => product.name).join(', ')}</strong>. Agregalos a una categoría para
           volver a ofrecerlos.
@@ -95,13 +91,13 @@ export function CategoriasView() {
         ) : categories.length === 0 ? (
           <p className="text-sm text-gray-500 text-center py-16">Todavía no creaste categorías.</p>
         ) : (
-          <div className="overflow-auto lg:min-h-0">
+          <div className="overflow-hidden lg:min-h-0">
             <table className="w-full text-left text-sm">
               <thead className="sticky top-0 z-10 bg-gray-50 text-[11px] font-bold text-gray-500 uppercase tracking-wider">
                 <tr>
-                  <th className="py-3 px-5">Categoría</th>
+                  <th className="w-1/4 sm:w-56 py-3 px-5">Categoría</th>
                   <th className="py-3 px-5">Productos</th>
-                  <th className="py-3 px-5 text-right">Acciones</th>
+                  <th className="w-28 py-3 px-5 text-right">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -111,12 +107,8 @@ export function CategoriasView() {
                       <p className="font-semibold text-gray-900">{category.name}</p>
                       {category.sector && SECTOR_CONFIG[category.sector as PreparationSector] && (
                         <div className="mt-0.5">
-                          <span
-                            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium ${
-                              SECTOR_CONFIG[category.sector as PreparationSector].badgeClass
-                            }`}
-                          >
-                            <SectorIcon sector={category.sector} className="w-3.5 h-3.5 shrink-0" />
+                          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-gray-600">
+                            <SectorIcon sector={category.sector} className="w-3.5 h-3.5 shrink-0 text-gray-500" />
                             <span>{SECTOR_CONFIG[category.sector as PreparationSector].label}</span>
                           </span>
                         </div>
@@ -145,22 +137,44 @@ export function CategoriasView() {
                       )}
                     </td>
                     <td className="py-3 px-5 text-right whitespace-nowrap space-x-2">
-                      <button
-                        type="button"
-                        onClick={() => setCategoryForm({ category })}
-                        aria-label={`Editar ${category.name}`}
-                        className="text-xs font-semibold rounded-lg px-3 py-1.5 text-gray-700 hover:bg-gray-200"
-                      >
-                        Editar
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(category)}
-                        aria-label={`Eliminar ${category.name}`}
-                        className="text-xs font-semibold rounded-lg px-3 py-1.5 text-red-600 hover:bg-red-50"
-                      >
-                        Eliminar
-                      </button>
+                      {deletingId === category.id ? (
+                        <span className="inline-flex items-center gap-1.5 text-xs">
+                          <span className="text-red-600 font-semibold text-xs">¿Eliminar?</span>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(category)}
+                            className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold text-xs transition"
+                          >
+                            Sí
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeletingId(null)}
+                            className="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-semibold text-xs transition"
+                          >
+                            No
+                          </button>
+                        </span>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setCategoryForm({ category })}
+                            aria-label={`Editar ${category.name}`}
+                            className="text-xs font-semibold rounded-lg px-3 py-1.5 text-gray-700 hover:bg-gray-200"
+                          >
+                            Editar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeletingId(category.id)}
+                            aria-label={`Eliminar ${category.name}`}
+                            className="text-xs font-semibold rounded-lg px-3 py-1.5 text-red-600 hover:bg-red-50"
+                          >
+                            Eliminar
+                          </button>
+                        </>
+                      )}
                     </td>
                   </tr>
                 ))}

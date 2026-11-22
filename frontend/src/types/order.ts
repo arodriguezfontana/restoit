@@ -49,12 +49,8 @@ export const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = {
   mercadopago: 'MercadoPago',
 };
 
-/** Medios que se ofrecen al tomar un pedido (los demás quedan solo para mostrar pedidos viejos). */
-export const COUNTER_PAYMENT_METHODS: PaymentMethod[] = ['efectivo', 'mercadopago'];
-
-/** Medios con los que el cliente puede pagar un pedido hecho desde la web. */
-export type WebPaymentMethod = Extract<PaymentMethod, 'efectivo' | 'mercadopago'>;
-export const WEB_PAYMENT_METHODS: WebPaymentMethod[] = ['efectivo', 'mercadopago'];
+/** Medios con los que se puede pagar un pedido hecho desde la web (los habilita el local en su configuración). */
+export type WebPaymentMethod = PaymentMethod;
 
 export interface CheckoutFormData {
   name: string;
@@ -82,6 +78,7 @@ export interface WebOrderPayload {
   notes: string | null;
   items: WebOrderItemPayload[];
   payment_method: WebPaymentMethod;
+  coupon_code?: string | null;
 }
 
 /** Pedido presencial: el personal registra además cómo paga el cliente. */
@@ -160,6 +157,15 @@ export interface WebOrderItem {
   promotion_description?: string | null;
 }
 
+/** Comprobante de una transferencia adjuntado a un pedido (el archivo se baja aparte). */
+export interface PaymentProofInfo {
+  content_type: string;
+  size_bytes: number;
+  uploaded_at: string;
+  /** Cuándo se elimina solo. */
+  expires_at: string;
+}
+
 export interface WebOrderCreated {
   id: number;
   shift_number: number;
@@ -176,6 +182,9 @@ export interface WebOrderCreated {
   is_paid: boolean;
   /** Link de Checkout Pro de MercadoPago al que se redirige al cliente (solo si eligió MercadoPago). */
   payment_url: string | null;
+  /** Con transferencia: clave para adjuntar el comprobante sin tener cuenta. */
+  proof_upload_token?: string | null;
+  payment_proof?: PaymentProofInfo | null;
   /** Solo en pedidos de mostrador: por qué no se pudo imprimir la comanda (el pedido se guardó igual). */
   print_error?: string | null;
 }
@@ -186,24 +195,13 @@ export interface CheckoutFormErrors {
   address?: string;
 }
 
-export type OrderStatus =
-  | 'Pendiente'
-  | 'Confirmado'
-  | 'En Camino'
-  | 'Listo para Retirar'
-  | 'Finalizado'
-  | 'Rechazado'
-  | 'Cancelado';
+/** Todos los pedidos entran 'Confirmado' (en preparación): el local no los acepta ni los rechaza. */
+export type OrderStatus = 'Confirmado' | 'En Camino' | 'Listo para Retirar' | 'Finalizado' | 'Cancelado';
 
 /** Estados en los que el pedido ya terminó (sale del tablero de comandas). */
-export const FINISHED_ORDER_STATUSES: OrderStatus[] = ['Finalizado', 'Rechazado', 'Cancelado'];
+export const FINISHED_ORDER_STATUSES: OrderStatus[] = ['Finalizado', 'Cancelado'];
 
-export const ACTIVE_ORDER_STATUSES: OrderStatus[] = [
-  'Pendiente',
-  'Confirmado',
-  'En Camino',
-  'Listo para Retirar',
-];
+export const ACTIVE_ORDER_STATUSES: OrderStatus[] = ['Confirmado', 'En Camino', 'Listo para Retirar'];
 
 export type OrderSource = 'bot' | 'web' | 'mostrador';
 
@@ -227,7 +225,7 @@ export interface AdminOrder {
   notes: string | null;
   estimated_minutes: number | null;
   /** De dónde salió la demora: historial del local, la cargó el personal o la estándar. */
-  estimate_source?: 'smart' | 'manual' | 'default' | null;
+  estimate_source?: 'smart' | 'fixed' | 'manual' | 'default' | null;
   /** Demora real en minutos (desde que ingresó hasta que se finalizó); vacía mientras el pedido no terminó. */
   actual_minutes?: number | null;
   scheduled_for: string | null;
@@ -247,11 +245,15 @@ export interface AdminOrder {
   balance_payment_method?: PaymentMethod | null;
   /** Se agregaron productos y cocina todavía no lo vio. */
   kitchen_update_pending?: boolean;
+  /** Pedido nuevo que el personal todavía no vio: el tablero lo resalta y suena la alerta hasta que lo ve. */
+  needs_attention?: boolean;
+  /** Comprobante vigente si el pedido se paga por transferencia y ya lo adjuntaron. */
+  payment_proof?: PaymentProofInfo | null;
   items?: WebOrderItem[];
   items_prepared_count?: number;
   is_all_prepared?: boolean;
   sectors?: (PreparationSector | string)[];
-  /** Solo al confirmar el pedido: por qué no se pudo imprimir la comanda (el pedido se guardó igual). */
+  /** Solo al registrar el pedido: por qué no se pudo imprimir la comanda (el pedido se guardó igual). */
   print_error?: string | null;
 }
 
@@ -262,19 +264,6 @@ export interface OrderDetail extends AdminOrder {
   shipping_cost: number;
   payment_method: PaymentMethod | null;
   is_paid: boolean;
-}
-
-/** Cómo se estimará la demora al aceptar un pedido. */
-export interface OrderDelayEstimate {
-  /** 'smart': la calcula el sistema con el historial del local; 'manual': la tiene que indicar el empleado. */
-  mode: 'smart' | 'manual';
-  estimated_minutes: number | null;
-  /** Pedidos parecidos con los que se calculó (o los que hay hasta ahora) y los que hacen falta. */
-  samples: number;
-  min_samples: number;
-  queue_size: number;
-  /** Demora estándar del local, para sugerirla al cargarla a mano. */
-  suggested_minutes: number;
 }
 
 /** Una parada del viaje de un repartidor con la llegada estimada al domicilio. */

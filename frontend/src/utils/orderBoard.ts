@@ -4,13 +4,13 @@ import type { AdminOrder, OrderStatus, PreparationSector, SectorFilter, WebOrder
 
 const DEFAULT_SECTOR = 'cocina';
 
-export type PendingFilter = 'ahora' | 'programados';
+/** Qué pedidos de la primera columna se ven: los de ahora o los programados para más tarde. */
+export type TimingFilter = 'ahora' | 'programados';
 
 /** Páginas del tablero por estado: cada columna tiene la suya. */
 export type ColumnPages = Record<string, number>;
 
 export const FIRST_PAGES: ColumnPages = {
-  Pendiente: 1,
   Confirmado: 1,
   'En Camino': 1,
   'Listo para Retirar': 1,
@@ -74,13 +74,13 @@ function ordersOfStatus(orders: AdminOrder[], status: OrderStatus, sector: Secto
   return searchTerm ? ofSector.filter((order) => orderMatchesSearch(order, searchTerm)) : ofSector;
 }
 
-function matchesPendingFilter(order: AdminOrder, filter: PendingFilter): boolean {
+function matchesTimingFilter(order: AdminOrder, filter: TimingFilter): boolean {
   return filter === 'ahora' ? !order.scheduled_for : Boolean(order.scheduled_for);
 }
 
 export interface ColumnOptions {
   selectedSector: SectorFilter;
-  pendingFilter: PendingFilter;
+  timingFilter: TimingFilter;
   pages: ColumnPages;
   pageSize: number;
   /** Texto del buscador; vacío si no se busca nada. */
@@ -93,8 +93,8 @@ export function buildColumns(orders: AdminOrder[], options: ColumnOptions): Boar
     const ofStatus = ordersOfStatus(orders, status, options.selectedSector, options.searchTerm);
     // El contador cuenta todos los pedidos del estado; el filtro Ahora/Programados solo afecta la lista.
     // Al buscar se muestran también los programados, para no esconder un pedido que sí coincide.
-    const filtersByPending = status === 'Pendiente' && !options.searchTerm;
-    const visible = filtersByPending ? ofStatus.filter((order) => matchesPendingFilter(order, options.pendingFilter)) : ofStatus;
+    const filtersByTiming = status === 'Confirmado' && !options.searchTerm;
+    const visible = filtersByTiming ? ofStatus.filter((order) => matchesTimingFilter(order, options.timingFilter)) : ofStatus;
     const totalPages = Math.ceil(visible.length / options.pageSize) || 1;
     const currentPage = Math.min(options.pages[status] || 1, totalPages);
     const start = (currentPage - 1) * options.pageSize;

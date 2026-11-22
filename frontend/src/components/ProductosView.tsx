@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { ProductDeleteModal } from '@/components/ProductDeleteModal';
 import { ProductFormModal } from '@/components/ProductFormModal';
 import { ProductsTable } from '@/components/ProductsTable';
 import { RecipeEditModal } from '@/components/RecipeEditModal';
@@ -7,15 +8,17 @@ import { useAsyncData } from '@/hooks/useAsyncData';
 import { useToast } from '@/hooks/useToast';
 import {
   createProduct,
+  deleteProduct,
   deleteProductImage,
   fetchAdminProducts,
   fetchCategories,
+  fetchProductPromotions,
   updateProduct,
   uploadProductImage,
 } from '@/services/catalogService';
 import { fetchIngredients, updateProductRecipe } from '@/services/ingredientService';
 import { INPUT_CLASS } from '@/styles/forms';
-import type { AdminCategory, AdminProduct, ImageChange, ProductPayload } from '@/types/catalog';
+import type { AdminCategory, AdminProduct, ImageChange, ProductPayload, ProductPromotionSummary } from '@/types/catalog';
 import type { Ingredient, RecipeItemPayload } from '@/types/ingredient';
 import { getErrorMessage } from '@/utils/errors';
 
@@ -25,12 +28,29 @@ const WITHOUT_CATEGORY = 'none';
 /** El formulario abierto: producto a editar, o null para crear uno nuevo. */
 type ProductForm = { product: AdminProduct | null } | null;
 
-function matches(product: AdminProduct, search: string, categoryFilter: string): boolean {
+function matches(
+  product: AdminProduct,
+  search: string,
+  categoryFilter: string,
+  restrictionFilter: string
+): boolean {
   const text = search.trim().toLowerCase();
   if (text && !`${product.name} ${product.description ?? ''}`.toLowerCase().includes(text)) return false;
-  if (categoryFilter === ALL) return true;
-  if (categoryFilter === WITHOUT_CATEGORY) return product.category === null;
-  return product.category?.id === Number(categoryFilter);
+  if (categoryFilter !== ALL) {
+    if (categoryFilter === WITHOUT_CATEGORY) {
+      if (product.category !== null) return false;
+    } else if (product.category?.id !== Number(categoryFilter)) {
+      return false;
+    }
+  }
+  if (restrictionFilter !== ALL) {
+    const target = restrictionFilter.toLowerCase().trim();
+    const hasMatch = (product.dietary_restrictions ?? []).some(
+      (r) => r.toLowerCase().trim() === target || r.toLowerCase().trim().includes(target)
+    );
+    if (!hasMatch) return false;
+  }
+  return true;
 }
 
 async function applyImageChange(product: AdminProduct, image: ImageChange): Promise<AdminProduct> {
@@ -67,9 +87,24 @@ export function ProductosView() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState(ALL);
+  const [restrictionFilter, setRestrictionFilter] = useState(ALL);
   const [productForm, setProductForm] = useState<ProductForm>(null);
   const [recipeProduct, setRecipeProduct] = useState<AdminProduct | null>(null);
+  const [deleteProductTarget, setDeleteProductTarget] = useState<AdminProduct | null>(null);
+  const [productPromotions, setProductPromotions] = useState<ProductPromotionSummary[]>([]);
+  const [loadingPromotions, setLoadingPromotions] = useState(false);
   const toast = useToast();
+
+  const availableRestrictions = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of products) {
+      for (const r of p.dietary_restrictions ?? []) {
+        if (r && r.trim()) set.add(r.trim());
+      }
+    }
+    ['vegetariano', 'vegano', 'sin TACC'].forEach((def) => set.add(def));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [products]);
 
   const upsert = (saved: AdminProduct) =>
     catalog.update((data) => data && { ...data, products: upsertProduct(data.products, saved) });
@@ -103,7 +138,38 @@ export function ProductosView() {
     toast.show(`Se guardó la receta de ${updated.name}.`);
   };
 
-  const visibleProducts = products.filter((product) => matches(product, search, categoryFilter));
+  const handleOpenDelete = async (product: AdminProduct) => {
+    setDeleteProductTarget(product);
+    setLoadingPromotions(true);
+    try {
+      const promos = await fetchProductPromotions(product.id);
+      setProductPromotions(promos);
+    } catch {
+      setProductPromotions([]);
+    } finally {
+      setLoadingPromotions(false);
+    }
+  };
+
+  const handleConfirmDelete = async (deletePromotions: boolean) => {
+    if (!deleteProductTarget) return;
+    await deleteProduct(deleteProductTarget.id, deletePromotions);
+    catalog.update((data) => data && {
+      ...data,
+      products: data.products.filter((p) => p.id !== deleteProductTarget.id),
+    });
+    const deletedName = deleteProductTarget.name;
+    setDeleteProductTarget(null);
+    toast.show(
+      deletePromotions
+        ? `Se eliminó el producto ${deletedName} y sus promociones asociadas.`
+        : `Se eliminó el producto ${deletedName}.`
+    );
+  };
+
+  const visibleProducts = products.filter((product) =>
+    matches(product, search, categoryFilter, restrictionFilter)
+  );
   const withoutRecipe = products.filter((product) => product.recipe.length === 0).length;
   const withoutCategory = products.filter((product) => product.category === null);
 
@@ -125,7 +191,7 @@ export function ProductosView() {
             aria-label="Filtrar por categoría"
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
-            className={`${INPUT_CLASS} bg-white sm:w-52`}
+            className={`${INPUT_CLASS} bg-white sm:w-48`}
           >
             <option value={ALL}>Todas las categorías</option>
             {categories.map((category) => (
@@ -135,11 +201,25 @@ export function ProductosView() {
             ))}
             {withoutCategory.length > 0 && <option value={WITHOUT_CATEGORY}>Sin categoría</option>}
           </select>
+          <select
+            aria-label="Filtrar por restricción"
+            value={restrictionFilter}
+            onChange={(e) => setRestrictionFilter(e.target.value)}
+            className={`${INPUT_CLASS} bg-white sm:w-48`}
+          >
+            <option value={ALL}>Todas las restricciones</option>
+            {availableRestrictions.map((restriction) => (
+              <option key={restriction} value={restriction}>
+                {restriction}
+              </option>
+            ))}
+          </select>
           <button
             type="button"
             onClick={() => setProductForm({ product: null })}
             disabled={catalog.loading}
-            className="bg-black text-white rounded-xl px-5 py-2 text-sm font-semibold hover:bg-gray-800 transition disabled:opacity-60 whitespace-nowrap"
+            style={{ backgroundColor: 'var(--primary-color, #18181b)' }}
+            className="text-white rounded-xl px-5 py-2 text-sm font-semibold hover:opacity-90 transition disabled:opacity-60 whitespace-nowrap"
           >
             + Crear producto
           </button>
@@ -152,7 +232,7 @@ export function ProductosView() {
       </div>
 
       {withoutCategory.length > 0 && (
-        <div className="shrink-0 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 px-4 py-3 text-sm">
+        <div className="shrink-0 rounded-xl bg-gray-50 text-gray-700 border border-gray-200 px-4 py-3 text-sm">
           {withoutCategory.length === 1 ? 'Este producto no tiene' : 'Estos productos no tienen'} categoría y no se
           muestran en el menú: <strong>{withoutCategory.map((product) => product.name).join(', ')}</strong>. Editalos
           para asignarles una.
@@ -173,7 +253,12 @@ export function ProductosView() {
         ) : visibleProducts.length === 0 ? (
           <p className="text-sm text-gray-500 text-center py-16">No hay productos que coincidan.</p>
         ) : (
-          <ProductsTable products={visibleProducts} onEdit={(product) => setProductForm({ product })} onEditRecipe={setRecipeProduct} />
+          <ProductsTable
+            products={visibleProducts}
+            onEdit={(product) => setProductForm({ product })}
+            onEditRecipe={setRecipeProduct}
+            onDelete={handleOpenDelete}
+          />
         )}
       </div>
 
@@ -193,6 +278,16 @@ export function ProductosView() {
           ingredients={ingredients}
           onClose={() => setRecipeProduct(null)}
           onSave={handleSaveRecipe}
+        />
+      )}
+
+      {deleteProductTarget && (
+        <ProductDeleteModal
+          product={deleteProductTarget}
+          promotions={productPromotions}
+          loadingPromotions={loadingPromotions}
+          onClose={() => setDeleteProductTarget(null)}
+          onConfirm={handleConfirmDelete}
         />
       )}
     </div>

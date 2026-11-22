@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
+from app.models.delay_rule import DelayRule
 from app.models.order import Order
 from app.services.tools.order_tools import (
     _parsear_hora,
@@ -185,12 +186,13 @@ def test_observaciones_largas_se_recortan(products):
 # --- confirmar_y_guardar_pedido ---
 
 
-def test_registra_el_pedido_pendiente_con_el_chat_de_telegram(db_session, products):
+def test_registra_el_pedido_directo_en_preparacion_con_el_chat_de_telegram(db_session, products):
     resultado = _confirmar(_datos(products), chat_id="98765")
 
     assert "Recibimos tu pedido" in resultado
     order = db_session.query(Order).one()
-    assert order.status == "Pendiente"
+    assert order.status == "Confirmado"
+    assert order.needs_attention is True
     assert order.source == "bot"
     assert (order.channel, order.chat_id) == ("telegram", "98765")
     assert order.delivery_method == "domicilio"
@@ -287,19 +289,47 @@ def test_calcular_y_preparar_pedido_ofrece_efectivo_y_mercadopago(products):
     assert "MercadoPago" in res["mensaje_para_usuario"]
 
 
-def test_confirmar_y_guardar_pedido_con_mercadopago_no_manda_el_link_antes_de_que_lo_acepten(db_session, products):
+def test_confirmar_y_guardar_pedido_con_mercadopago_manda_el_link_al_registrarlo(db_session, products):
     datos = _datos(products, metodo_pago="mercadopago")
-    resultado = _confirmar(datos)
+    resultado = _confirmar(datos, chat_id="98765")
 
     assert "Recibimos tu pedido" in resultado
     assert "MercadoPago" in resultado
-    assert "cuando el local acepte tu pedido" in resultado
-    assert "https://" not in resultado
+    assert "Link de pago de MercadoPago" in resultado
+    assert "https://" in resultado
 
     order = db_session.query(Order).one()
     assert order.payment_method == "mercadopago"
     assert order.is_paid is False
-    assert order.mp_preference_id is None
+    assert order.mp_preference_id
+
+
+def test_el_mensaje_del_pedido_no_promete_demora_si_no_hay_ninguna_configurada(db_session, products):
+    resultado = _confirmar(_datos(products), chat_id="98765")
+
+    assert "Tiempo estimado" not in resultado
+    assert "Ya lo estamos preparando" in resultado
+    assert db_session.query(Order).one().estimated_minutes is None
+
+
+def test_el_mensaje_del_pedido_informa_la_demora_de_la_regla_fija(db_session, products):
+    db_session.add(DelayRule(delivery_method="domicilio", min_orders=0, max_orders=None, minutes=35))
+    db_session.commit()
+
+    resultado = _confirmar(_datos(products), chat_id="98765")
+
+    assert "Tiempo estimado de entrega: 35 minutos" in resultado
+    order = db_session.query(Order).one()
+    assert (order.estimated_minutes, order.estimate_source) == (35, "fixed")
+
+
+def test_el_pedido_del_bot_imprime_la_comanda_al_registrarse(db_session, products):
+    with patch("app.services.tools.order_tools.printer_service.print_order") as imprimir:
+        imprimir.return_value.success = True
+        _confirmar(_datos(products), chat_id="98765")
+
+    imprimir.assert_called_once()
+    assert imprimir.call_args.args[1].id == db_session.query(Order).one().id
 
 
 # --- Pizzas Mitad y Mitad ---
@@ -506,7 +536,7 @@ def test_si_falta_el_metodo_de_pago_solo_pregunta_eso(products):
     resumen = _resumen_completo()
 
     assert "¿Está todo bien" not in resumen
-    assert resumen.rstrip().endswith('💳 ¿Cómo preferís pagar? Ofrecemos "Efectivo" y "MercadoPago".')
+    assert resumen.rstrip().endswith('💳 ¿Cómo preferís pagar? Ofrecemos "Efectivo", "Transferencia", "Tarjeta" y "MercadoPago".')
 
 
 def test_si_faltan_datos_no_pide_confirmar(products):
@@ -537,3 +567,96 @@ def test_si_saluda_y_ya_pide_algo_el_bot_lo_procesa_en_la_misma_respuesta():
 
     assert "saludalo y procesalo en la misma respuesta" in prompt
     assert "Si solo saluda, preguntale amablemente si quiere ver el menú" in prompt
+
+
+# --- Medios de pago habilitados por el local (US-59) ---
+
+
+def _habilitar(db_session, **cambios):
+    from app.services.store_config_service import get_or_create_store_config
+
+    config = get_or_create_store_config(db_session)
+    for campo, valor in cambios.items():
+        setattr(config, campo, valor)
+    db_session.commit()
+
+
+def test_el_bot_registra_un_pedido_pagado_por_transferencia_con_los_datos_de_cobro(db_session, products):
+    resultado = _confirmar(_datos(products, metodo_pago="transferencia"))
+
+    assert "Transferencia" in resultado
+    assert "local.test" in resultado
+    assert db_session.query(Order).one().payment_method == "transferencia"
+
+
+def test_el_bot_rechaza_un_pedido_con_un_medio_no_habilitado(db_session, products):
+    _habilitar(db_session, accepts_card=False)
+
+    resultado = _confirmar(_datos(products, metodo_pago="tarjeta"))
+
+    assert "NO se registró" in resultado
+    assert db_session.query(Order).count() == 0
+
+
+def test_el_resumen_ofrece_solo_los_medios_habilitados(db_session, products):
+    _habilitar(db_session, accepts_transfer=False, accepts_mercadopago=False, accepts_card=True)
+
+    resultado = _calcular(items_solicitados="1 Pizza Muzzarella", customer_name="Ana", customer_phone="11 4444-5555", metodo_entrega="retiro")
+
+    assert '"Efectivo" y "Tarjeta"' in resultado["mensaje_para_usuario"]
+    assert "MercadoPago" not in resultado["mensaje_para_usuario"]
+
+
+def test_si_el_cliente_pide_un_medio_no_habilitado_se_le_avisa_y_se_vuelve_a_preguntar(db_session, products):
+    _habilitar(db_session, accepts_card=False)
+
+    resultado = _calcular(
+        items_solicitados="1 Pizza Muzzarella",
+        customer_name="Ana",
+        customer_phone="11 4444-5555",
+        metodo_entrega="retiro",
+        metodo_pago="tarjeta",
+    )
+
+    assert "no acepta Tarjeta" in resultado["mensaje_para_usuario"]
+    assert resultado["datos_temporales"]["metodo_pago"] is None
+
+
+def test_las_instrucciones_del_bot_listan_los_medios_del_local(db_session):
+    from app.services.payment_methods_service import describe_for_bot
+
+    _habilitar(db_session, accepts_mercadopago=False, card_applies_to="pickup")
+
+    texto = describe_for_bot(db_session)
+
+    assert "Efectivo" in texto and "local.test" in texto and "solo en pedidos con retiro" in texto
+    assert "MercadoPago" not in texto
+
+
+@pytest.mark.parametrize(
+    ("texto", "esperado"),
+    [
+        ("transfe", "transferencia"),
+        ("por transferencia", "transferencia"),
+        ("te hago una transf", "transferencia"),
+        ("débito", "tarjeta"),
+        ("crédito", "tarjeta"),
+        ("con tarjeta", "tarjeta"),
+        ("MP", "mercadopago"),
+        ("link de pago", "mercadopago"),
+        ("cash", "efectivo"),
+        ("en efectivo", "efectivo"),
+        ("no sé", None),
+    ],
+)
+def test_el_bot_reconoce_variantes_del_medio_de_pago(texto, esperado):
+    from app.services.tools.order_tools import normalizar_metodo_pago
+
+    assert normalizar_metodo_pago(texto) == esperado
+
+
+def test_el_bot_con_transferencia_pasa_los_datos_y_pide_el_comprobante(db_session, products):
+    resultado = _confirmar(_datos(products, metodo_pago="transferencia"))
+
+    assert "$17,000.00" in resultado and "local.test" in resultado and "Local de Prueba" in resultado
+    assert "comprobante" in resultado

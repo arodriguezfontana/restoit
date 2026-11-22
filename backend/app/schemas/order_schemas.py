@@ -1,14 +1,34 @@
 from datetime import datetime
-from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.order import DeliveryMethod, Order, OrderItem, OrderStatus, PaymentMethod
 from app.schemas.common import PHONE_PATTERN
 from app.services.order_service import CounterPayment, OrderRequest
+from app.services.payment_proof_service import current_proof, pays_by_transfer, upload_token
 
 MAX_ITEMS_PER_ORDER = 30
-WEB_PAYMENT_METHODS = (PaymentMethod.CASH, PaymentMethod.MERCADOPAGO)
+
+
+class PaymentProofInfo(BaseModel):
+    """Datos del comprobante de transferencia de un pedido (el archivo se baja aparte)."""
+
+    content_type: str
+    size_bytes: int
+    uploaded_at: datetime
+    expires_at: datetime
+
+
+def _proof_info(order: Order) -> PaymentProofInfo | None:
+    proof = current_proof(order)
+    if proof is None:
+        return None
+    return PaymentProofInfo(
+        content_type=proof.content_type,
+        size_bytes=proof.size_bytes,
+        uploaded_at=proof.uploaded_at,
+        expires_at=proof.expires_at,
+    )
 
 
 class OrderResponse(BaseModel):
@@ -49,11 +69,15 @@ class OrderResponse(BaseModel):
     balance_payment_method: PaymentMethod | None = None  # type: ignore[assignment]
     # Se agregaron productos y cocina todavía no lo vio.
     kitchen_update_pending: bool = False
+    # Pedido nuevo que el personal todavía no vio (suena la alerta del tablero).
+    needs_attention: bool = False
+    # Comprobante vigente si el pedido se paga por transferencia y ya lo adjuntaron.
+    payment_proof: PaymentProofInfo | None = None
     items: list["WebOrderItemResponse"] = Field(default_factory=list)
     items_prepared_count: int = 0
     is_all_prepared: bool = False
     sectors: list[str] = Field(default_factory=list)
-    # Solo al confirmar: motivo por el que la comanda no se pudo imprimir (el pedido se guardó igual).
+    # Solo al registrar el pedido: motivo por el que la comanda no se pudo imprimir (el pedido se guardó igual).
     print_error: str | None = None
 
     @model_validator(mode="after")
@@ -93,26 +117,13 @@ class OrderResponse(BaseModel):
             pending_amount=float(order.amount_pending),
             balance_payment_method=PaymentMethod(order.balance_payment_method) if order.balance_payment_method else None,
             kitchen_update_pending=bool(order.kitchen_update_pending),
+            needs_attention=bool(order.needs_attention),
+            payment_proof=_proof_info(order),
             items=[WebOrderItemResponse.from_model(item) for item in order.items] if order.items else [],
             items_prepared_count=order.items_prepared_count,
             is_all_prepared=order.is_all_prepared,
             sectors=order.sectors,
         )
-
-
-class OrderDelayEstimateResponse(BaseModel):
-    """Cómo se estimará la demora al aceptar un pedido."""
-
-    # "smart": la calcula el sistema con el historial; "manual": la tiene que indicar el empleado.
-    mode: Literal["smart", "manual"]
-    # Demora calculada (solo en modo inteligente).
-    estimated_minutes: int | None = None
-    # Pedidos parecidos con los que se calculó, o los que hay hasta ahora, y los que se necesitan.
-    samples: int
-    min_samples: int
-    queue_size: int
-    # Demora estándar del local, para sugerirla al cargarla a mano.
-    suggested_minutes: int
 
 
 class TripDispatchPayload(BaseModel):
@@ -163,8 +174,13 @@ class TripResponse(BaseModel):
 
 class OrderStatusUpdate(BaseModel):
     status: OrderStatus
-    estimated_minutes: int | None = Field(None, gt=0)
     delivery_driver_id: int | None = None
+
+
+class OrderDelayUpdate(BaseModel):
+    """Demora estimada que el personal carga o modifica a mano."""
+
+    estimated_minutes: int = Field(..., gt=0, le=1440)
 
 
 class WebOrderItemCreate(BaseModel):
@@ -224,17 +240,12 @@ class _OrderCreate(BaseModel):
 class WebOrderCreate(_OrderCreate):
     """Pedido generado desde la web del cliente.
 
-    Solo se ofrece efectivo (al recibir o retirar) o MercadoPago (se paga online al confirmar). Si el pago
+    El medio de pago tiene que estar habilitado en la configuración del local (se verifica al registrarlo). Si el pago
     ya se hizo lo decide el sistema, nunca el cliente: un pedido web siempre arranca sin abonar.
     """
 
     payment_method: PaymentMethod = PaymentMethod.CASH
-
-    @model_validator(mode="after")
-    def _web_payment_methods(self) -> "WebOrderCreate":
-        if self.payment_method not in WEB_PAYMENT_METHODS:
-            raise ValueError("En la web se puede pagar solo en efectivo o con MercadoPago.")
-        return self
+    coupon_code: str | None = Field(None, max_length=50)
 
 
 class CounterOrderCreate(_OrderCreate):
@@ -321,6 +332,9 @@ class WebOrderCreatedResponse(BaseModel):
     is_paid: bool = False
     # Link de Checkout Pro de MercadoPago al que se redirige al cliente para pagar (solo si eligió MercadoPago).
     payment_url: str | None = None
+    # Con transferencia: clave para adjuntar el comprobante del pedido sin tener cuenta (ver payment_proof_service).
+    proof_upload_token: str | None = None
+    payment_proof: PaymentProofInfo | None = None
     # Solo en pedidos de mostrador: motivo por el que la comanda no se pudo imprimir (el pedido se guardó igual).
     print_error: str | None = None
 
@@ -341,6 +355,8 @@ class WebOrderCreatedResponse(BaseModel):
             payment_method=order.payment_method,
             is_paid=bool(order.is_paid),
             payment_url=payment_url,
+            proof_upload_token=upload_token(order.id) if pays_by_transfer(order) else None,
+            payment_proof=_proof_info(order),
         )
 
 
@@ -360,9 +376,10 @@ class OrderDetailResponse(OrderResponse):
 
 
 class OrderPaymentUpdate(BaseModel):
-    """Payload para actualizar manualmente el estado de cobro de un pedido."""
+    """Payload para actualizar manualmente el estado de cobro de un pedido o cambiar su medio de pago."""
 
-    is_paid: bool = True
+    is_paid: bool | None = None
+    payment_method: PaymentMethod | None = None
 
 
 class OrderItemPreparedUpdate(BaseModel):

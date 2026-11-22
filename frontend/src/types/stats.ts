@@ -43,6 +43,12 @@ export interface TopProductKpi {
   revenue_growth_pct?: number | null;
 }
 
+export interface TopPromotionKpi {
+  promotion_name: string;
+  total_quantity: number;
+  total_revenue: number;
+}
+
 export interface DashboardKPIsResponse {
   revenue: GrowthMetric;
   orders_count: GrowthMetric;
@@ -61,6 +67,7 @@ export interface DashboardKPIsResponse {
   };
   status_distribution: Record<string, number>;
   top_products: TopProductKpi[];
+  top_promotions?: TopPromotionKpi[];
 }
 
 export interface BusinessGoalItem {
@@ -95,6 +102,81 @@ export interface StrategicInsightResponse {
   warnings: string[];
   operational_weaknesses?: string[];
   recommendations: string[];
+  spending_recommendations?: string[];
   operational_metrics?: OperationalMetricsContext | null;
   generated_at: string;
 }
+
+export interface DayProjectionItem {
+  date: string;
+  day_name: string;
+  is_weekend: boolean;
+  projected_orders: number;
+  projected_revenue: number;
+}
+
+export interface IngredientDemandItem {
+  ingredient_id: number;
+  ingredient_name: string;
+  unit: string;
+  projected_quantity: number;
+  unit_cost: number;
+  estimated_cost: number;
+  contributing_products: string[];
+}
+
+export interface PredictionsResponse {
+  days: DayProjectionItem[];
+  total_projected_orders: number;
+  total_projected_revenue: number;
+  weekday_projected_orders: number;
+  weekday_projected_revenue: number;
+  weekend_projected_orders: number;
+  weekend_projected_revenue: number;
+  avg_daily_orders: number;
+  avg_daily_revenue: number;
+  ingredient_demands: IngredientDemandItem[];
+  strategic_prescriptions: string[];
+  is_ai_generated: boolean;
+  historical_weeks_analyzed: number;
+  disclaimer?: string | null;
+  generated_at: string;
+}
+
+export interface CopilotSuggestedAction {
+  action_type: string;
+  title: string;
+  description: string;
+  button_label: string;
+  payload: Record<string, unknown>;
+}
+
+export interface CopilotActionExecutionResponse {
+  success: boolean;
+  message: string;
+  executed_action: string;
+  affected_entity_id?: number | null;
+}
+
+export interface CopilotChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  cited_period?: string;
+  data_summary?: Record<string, unknown>;
+  suggested_followups?: string[];
+  suggested_action?: CopilotSuggestedAction | null;
+  action_status?: 'idle' | 'executing' | 'executed' | 'discarded';
+  action_result_message?: string;
+  is_fallback?: boolean;
+}
+
+export interface CopilotAnswerResponse {
+  answer: string;
+  cited_period: string;
+  data_summary?: Record<string, unknown> | null;
+  suggested_followups?: string[];
+  suggested_action?: CopilotSuggestedAction | null;
+  is_fallback: boolean;
+  generated_at: string;
+}
+

@@ -101,6 +101,25 @@ def latest_for_chat(db: Session, channel: str, chat_id: str) -> Order | None:
     )
 
 
+def latest_transfer_for_chat(db: Session, channel: str, chat_id: str) -> Order | None:
+    """Último pedido por transferencia del cliente de ese chat que todavía no está abonado."""
+    return (
+        db.query(Order)
+        .filter(
+            Order.channel == channel,
+            Order.chat_id == chat_id,
+            Order.is_paid.is_(False),
+            or_(
+                Order.payment_method == PaymentMethod.TRANSFER.value,
+                Order.balance_payment_method == PaymentMethod.TRANSFER.value,
+            ),
+            Order.status != OrderStatus.CANCELLED.value,
+        )
+        .order_by(Order.id.desc())
+        .first()
+    )
+
+
 def list_orders(
     db: Session,
     date_from: datetime | None,
@@ -149,8 +168,15 @@ def list_orders(
     return query.order_by(Order.created_at.desc()).all()
 
 
-def count_with_status(db: Session, status: OrderStatus) -> int:
-    return db.query(func.count(Order.id)).filter(Order.status == status.value).scalar() or 0
+def count_in_queue(db: Session) -> int:
+    """Pedidos para ahora que se están preparando (todavía sin despachar ni listos para retirar). Los programados
+    no cuentan: se preparan en su horario y no ocupan la cocina hasta entonces."""
+    return (
+        db.query(func.count(Order.id))
+        .filter(Order.status == OrderStatus.CONFIRMED.value, Order.scheduled_for.is_(None))
+        .scalar()
+        or 0
+    )
 
 
 def undispatched_for_driver(db: Session, delivery_driver_id: int) -> list[Order]:
@@ -171,7 +197,7 @@ def undispatched_for_driver(db: Session, delivery_driver_id: int) -> list[Order]
 
 def finished_durations(db: Session, delivery_method: str, queue_size: int, limit: int) -> list[int]:
     """Demora real (minutos desde que ingresó hasta que se finalizó) de los últimos pedidos para ahora con ese método de
-    entrega que se aceptaron con esa cantidad de pedidos en cola. Los más recientes primero."""
+    entrega que ingresaron con esa cantidad de pedidos en cola. Los más recientes primero."""
     accepted = aliased(OrderStatusEvent)
     rows = (
         db.query(Order.actual_minutes)
@@ -213,6 +239,25 @@ def best_selling_products(
         date_to,
     )
     return query.group_by(Product.id, Product.name).order_by(quantity.desc(), Product.name).limit(limit).all()
+
+
+def best_selling_promotions(
+    db: Session, date_from: datetime | None, date_to: datetime | None, limit: int = 5
+) -> list[tuple[str, int, float]]:
+    """(nombre, unidades, facturación) de las promociones más vendidas en pedidos que cuentan como venta."""
+    from app.models.promotion import Promotion
+
+    quantity = func.sum(OrderItem.quantity)
+    revenue = func.sum(OrderItem.quantity * OrderItem.unit_price)
+    query = created_between(
+        db.query(Promotion.name, quantity, revenue)
+        .join(OrderItem, OrderItem.promotion_id == Promotion.id)
+        .join(Order, Order.id == OrderItem.order_id)
+        .filter(Order.is_billable),
+        date_from,
+        date_to,
+    )
+    return query.group_by(Promotion.id, Promotion.name).order_by(quantity.desc(), Promotion.name).limit(limit).all()
 
 
 def billable_totals(db: Session, date_from: datetime | None, date_to: datetime | None) -> list[tuple[datetime, Decimal]]:

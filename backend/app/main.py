@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -13,7 +14,9 @@ from app.api import (
     category_router,
     chat_router,
     client_router,
+    coupon_router,
     customer_router,
+    delay_rule_router,
     delivery_driver_router,
     handoff_router,
     ingredient_router,
@@ -34,6 +37,7 @@ from app.api import (
 from app.api.errors import register_error_handlers
 from app.core.config import settings
 from app.db.session import get_db
+from app.services import payment_proof_service
 from app.services.channels import registrar_webhooks
 
 logging.basicConfig(level=logging.INFO)
@@ -48,7 +52,11 @@ async def lifespan(_: FastAPI):
     except Exception as e:
         logging.getLogger(__name__).warning("No se pudo ejecutar create_all en startup: %s", e)
     await registrar_webhooks()
-    yield
+    cleanup = asyncio.create_task(payment_proof_service.run_cleanup_loop())
+    try:
+        yield
+    finally:
+        cleanup.cancel()
 
 
 app = FastAPI(
@@ -85,7 +93,9 @@ api_router.include_router(cash_shift_router.router, prefix="/cash-shifts", tags=
 api_router.include_router(category_router.router, prefix="/categories", tags=["Categories"])
 api_router.include_router(chat_router.router, prefix="/chat", tags=["Chatbot"])
 api_router.include_router(client_router.router, prefix="/clients", tags=["Clients"])
+api_router.include_router(coupon_router.router, prefix="/coupons", tags=["Coupons"])
 api_router.include_router(customer_router.router, prefix="/customers", tags=["Customers"])
+api_router.include_router(delay_rule_router.router, prefix="/delay-settings", tags=["Delay settings"])
 api_router.include_router(delivery_driver_router.router, prefix="/delivery-drivers", tags=["Delivery Drivers"])
 api_router.include_router(handoff_router.router, prefix="/handoffs", tags=["Handoffs"])
 api_router.include_router(ingredient_router.router, prefix="/ingredients", tags=["Ingredients"])

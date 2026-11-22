@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider } from '@/context/AuthContext';
 import { CartProvider } from '@/context/CartContext';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
+import { StoreBranding } from '@/components/StoreBranding';
 import LoginPage from '@/pages/LoginPage';
 import AdminDashboardPage from '@/pages/AdminDashboardPage';
 import MenuPage from '@/pages/MenuPage';
@@ -10,6 +11,7 @@ import ProfilePage from '@/pages/ProfilePage';
 function App() {
   return (
     <BrowserRouter>
+      <StoreBranding />
       <AuthProvider>
         {/* El carrito vive fuera de las rutas para no perderlo al ir y volver del perfil. */}
         <CartProvider>

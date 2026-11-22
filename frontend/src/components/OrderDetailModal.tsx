@@ -4,6 +4,7 @@ import { BotIcon, PrinterIcon } from '@/components/Icons';
 import { BillingSection } from '@/components/orderDetail/BillingSection';
 import { CancelOrderControl } from '@/components/orderDetail/CancelOrderControl';
 import { Row, Section } from '@/components/orderDetail/DetailLayout';
+import { EstimatedDelayRow } from '@/components/orderDetail/EstimatedDelayRow';
 import { ProductsSection } from '@/components/orderDetail/ProductsSection';
 import { useModalFocus } from '@/hooks/useModalFocus';
 import { useOrderDetail } from '@/hooks/useOrderDetail';
@@ -14,12 +15,10 @@ import { formatDate, formatTime } from '@/utils/dateTime';
 import { openOrderChat } from '@/utils/orderChat';
 
 const STATUS_BADGE_CLASS: Record<OrderStatus, string> = {
-  Pendiente: 'bg-amber-100 text-amber-800',
   Confirmado: 'bg-blue-100 text-blue-800',
   'En Camino': 'bg-purple-100 text-purple-800',
   'Listo para Retirar': 'bg-teal-100 text-teal-800',
   Finalizado: 'bg-green-100 text-green-800',
-  Rechazado: 'bg-red-100 text-red-700',
   Cancelado: 'bg-red-100 text-red-700',
 };
 
@@ -39,8 +38,8 @@ function originLabel(order: AdminOrder): string {
   return order.channel ? `${source} · ${CHANNEL_LABEL[order.channel] ?? order.channel}` : source;
 }
 
-/** Cuándo se hace el pedido: el horario programado o la demora estimada (si hay). */
-function ScheduleRow({ order }: { order: AdminOrder }) {
+/** Cuándo se hace el pedido: el horario programado o la demora estimada (si hay), que el personal puede modificar. */
+function ScheduleRow({ order, onUpdateDelay }: { order: AdminOrder; onUpdateDelay?: (orderId: number, minutes: number) => Promise<void> }) {
   if (order.scheduled_for) {
     return (
       <Row label="Programado para">
@@ -48,10 +47,19 @@ function ScheduleRow({ order }: { order: AdminOrder }) {
       </Row>
     );
   }
-  return order.estimated_minutes != null ? <Row label="Demora estimada">{order.estimated_minutes} min</Row> : null;
+  const canEdit = onUpdateDelay && ACTIVE_ORDER_STATUSES.includes(order.status);
+  return <EstimatedDelayRow order={order} onUpdateDelay={canEdit ? onUpdateDelay : undefined} />;
 }
 
-function CustomerSection({ order, isDelivery }: { order: AdminOrder; isDelivery: boolean }) {
+function CustomerSection({
+  order,
+  isDelivery,
+  onUpdateDelay,
+}: {
+  order: AdminOrder;
+  isDelivery: boolean;
+  onUpdateDelay?: (orderId: number, minutes: number) => Promise<void>;
+}) {
   return (
     <Section title="Cliente y entrega">
       <dl className="space-y-1.5">
@@ -60,7 +68,7 @@ function CustomerSection({ order, isDelivery }: { order: AdminOrder; isDelivery:
         <Row label="Modalidad">{isDelivery ? 'Envío a domicilio' : 'Retiro en el local'}</Row>
         {isDelivery && <Row label="Dirección">{order.shipping_address}</Row>}
         {order.delivery_driver_name && <Row label="Repartidor">{order.delivery_driver_name}</Row>}
-        <ScheduleRow order={order} />
+        <ScheduleRow order={order} onUpdateDelay={onUpdateDelay} />
       </dl>
     </Section>
   );
@@ -69,12 +77,12 @@ function CustomerSection({ order, isDelivery }: { order: AdminOrder; isDelivery:
 interface OrderDetailModalProps {
   /** Datos del tablero: se muestran al instante mientras se carga el detalle completo. */
   order: AdminOrder;
-  /** En el modo simulación los pedidos no existen en el servidor: no se busca su detalle. */
-  simulated?: boolean;
   /** Marca el pedido como abonado. */
   onMarkPaid?: (orderId: number, isPaid: boolean) => Promise<void>;
   /** Cocina vio los productos que el cliente agregó al pedido. */
   onAcknowledgeUpdate?: (orderId: number) => Promise<void>;
+  /** Carga o modifica a mano la demora estimada del pedido. */
+  onUpdateDelay?: (orderId: number, minutes: number) => Promise<void>;
   /** Cancela el pedido (si se indica, el modal ofrece el botón mientras el pedido siga en curso). */
   onCancel?: (orderId: number) => Promise<void>;
   onClose: () => void;
@@ -82,13 +90,13 @@ interface OrderDetailModalProps {
 
 export function OrderDetailModal({
   order,
-  simulated = false,
   onMarkPaid,
   onAcknowledgeUpdate,
+  onUpdateDelay,
   onCancel,
   onClose,
 }: OrderDetailModalProps) {
-  const { detail, loading, error, retry, patchDetail } = useOrderDetail(order.id, simulated);
+  const { detail, loading, error, retry, patchDetail } = useOrderDetail(order.id);
   const [markingPaid, setMarkingPaid] = useState(false);
   const [acknowledging, setAcknowledging] = useState(false);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
@@ -166,7 +174,7 @@ export function OrderDetailModal({
             <p className="text-sm text-gray-500">
               Recibido el {formatDate(order.created_at)} a las {formatTime(order.created_at)} hs
             </p>
-            {order.has_chat && !simulated && (
+            {order.has_chat && (
               <button
                 type="button"
                 onClick={() => {
@@ -204,11 +212,10 @@ export function OrderDetailModal({
         </header>
 
         <div className="overflow-y-auto px-6 py-5 space-y-6">
-          <CustomerSection order={order} isDelivery={isDelivery} />
+          <CustomerSection order={order} isDelivery={isDelivery} onUpdateDelay={onUpdateDelay} />
           <ProductsSection
             order={order}
             detail={detail}
-            simulated={simulated}
             loading={loading}
             error={error}
             onRetry={retry}
@@ -233,18 +240,16 @@ export function OrderDetailModal({
               {printFeedback.message}
             </p>
           )}
-          {!simulated && (
-            <button
-              type="button"
-              onClick={() => void reprint(order)}
-              disabled={printingId === order.id}
-              aria-label="Reimprimir comanda"
-              title="Reimprimir comanda"
-              className="p-2.5 rounded-xl border border-gray-300 hover:bg-gray-50 text-gray-800 transition disabled:opacity-60"
-            >
-              <PrinterIcon className={`w-5 h-5 ${printingId === order.id ? 'animate-pulse' : ''}`} />
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => void reprint(order)}
+            disabled={printingId === order.id}
+            aria-label="Reimprimir comanda"
+            title="Reimprimir comanda"
+            className="p-2.5 rounded-xl border border-gray-300 hover:bg-gray-50 text-gray-800 transition disabled:opacity-60"
+          >
+            <PrinterIcon className={`w-5 h-5 ${printingId === order.id ? 'animate-pulse' : ''}`} />
+          </button>
           <button
             type="button"
             onClick={onClose}

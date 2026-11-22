@@ -69,6 +69,7 @@ class CashShiftSummaryBreakdown(BaseModel):
     manual_income: float
     manual_expense: float
     expected_cash: float
+    pending_transfers: float = 0.0
     final_amount: float | None = None
     difference: float | None = None
     difference_type: str | None = None
@@ -116,15 +117,52 @@ class CashShiftResponse(BaseModel):
         return cls.from_model(report.shift, report.summary)
 
 
+class ShiftOrderResponse(BaseModel):
+    id: int
+    shift_number: int | None = None
+    customer_name: str
+    total_amount: float
+    payment_method: str | None = None
+    balance_payment_method: str | None = None
+    paid_amount: float = 0.0
+    pending_amount: float = 0.0
+    is_paid: bool = False
+    status: str
+    created_at: datetime
+    is_billable: bool
+
+    model_config = ConfigDict(from_attributes=True)
+
+    @classmethod
+    def from_model(cls, order) -> "ShiftOrderResponse":
+        return cls(
+            id=order.id,
+            shift_number=order.shift_number,
+            customer_name=order.customer_name,
+            total_amount=float(order.total_amount),
+            payment_method=order.payment_method,
+            balance_payment_method=order.balance_payment_method,
+            paid_amount=float(order.amount_paid),
+            pending_amount=float(order.amount_pending),
+            is_paid=bool(order.is_paid),
+            status=order.status,
+            created_at=order.created_at,
+            is_billable=order.is_billable,
+        )
+
+
 class CashShiftDetailResponse(CashShiftResponse):
     movements: list[CashMovementResponse] = Field(default_factory=list)
+    orders: list[ShiftOrderResponse] = Field(default_factory=list)
 
     @classmethod
     def from_report(cls, report: ShiftReport) -> "CashShiftDetailResponse":
         base = CashShiftResponse.from_report(report)
+        sorted_orders = sorted(report.shift.orders or [], key=lambda o: o.created_at, reverse=True)
         return cls(
             **base.model_dump(),
             movements=[CashMovementResponse.from_model(m) for m in report.shift.movements or []],
+            orders=[ShiftOrderResponse.from_model(o) for o in sorted_orders],
         )
 
 

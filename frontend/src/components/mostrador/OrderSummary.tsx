@@ -1,4 +1,8 @@
-import { COUNTER_PAYMENT_METHODS, MAX_QUANTITY_PER_ITEM, PAYMENT_METHOD_LABEL } from '@/types/order';
+import { useState } from 'react';
+import { PROOF_ACCEPT } from '@/services/orderService';
+import { formatSize } from '@/utils/files';
+import { proofFileProblem } from '@/utils/paymentProof';
+import { MAX_QUANTITY_PER_ITEM, PAYMENT_METHOD_LABEL } from '@/types/order';
 import type { CartItem, PaymentMethod } from '@/types/order';
 import { formatCurrency } from '@/utils/currency';
 import { orderLineKey } from '@/hooks/useOrderLines';
@@ -14,14 +18,22 @@ function SummaryLine({ line, onQuantityChange, onRemove }: SummaryLineProps) {
   const name = line.promotion ? line.promotion.name : line.product.name;
   const price = line.promotion ? line.promotion.price : line.product.price;
   return (
-    <tr className={isPromo ? 'bg-amber-50/40' : undefined}>
+    <tr
+      style={
+        isPromo
+          ? {
+              backgroundColor: 'var(--primary-light, #f4f4f5)',
+            }
+          : undefined
+      }
+    >
       <td className="py-2 px-1">
         <div className="flex items-center gap-1">
           <button
             type="button"
             onClick={() => onQuantityChange(line.quantity - 1)}
             aria-label={`Restar una unidad de ${name}`}
-            className="w-6 h-6 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition"
+            className="w-6 h-6 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition flex items-center justify-center font-bold"
           >
             −
           </button>
@@ -31,21 +43,14 @@ function SummaryLine({ line, onQuantityChange, onRemove }: SummaryLineProps) {
             onClick={() => onQuantityChange(line.quantity + 1)}
             disabled={line.quantity >= MAX_QUANTITY_PER_ITEM}
             aria-label={`Sumar una unidad de ${name}`}
-            className="w-6 h-6 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-6 h-6 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center font-bold"
           >
             +
           </button>
         </div>
       </td>
       <td className="py-2 px-1 text-gray-900">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {isPromo && (
-            <span className="text-[10px] font-bold uppercase px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 border border-amber-200">
-              Promo
-            </span>
-          )}
-          <span>{name}</span>
-        </div>
+        <span>{name}</span>
       </td>
       <td className="py-2 px-1 text-right text-gray-600 whitespace-nowrap">{formatCurrency(price)}</td>
       <td className="py-2 px-1 text-right font-semibold text-gray-900 whitespace-nowrap">
@@ -65,12 +70,38 @@ function SummaryLine({ line, onQuantityChange, onRemove }: SummaryLineProps) {
   );
 }
 
+/** Comprobante de la transferencia: se puede adjuntar ahora o después, desde el detalle del pedido. */
+function ProofPicker({ file, onChange }: { file: File | null; onChange: (file: File | null) => void }) {
+  const [problem, setProblem] = useState<string | null>(null);
+  const handle = (selected: File | undefined) => {
+    const error = selected ? proofFileProblem(selected) : null;
+    setProblem(error);
+    onChange(selected && !error ? selected : null);
+  };
+  return (
+    <div className="basis-full text-xs space-y-1">
+      <label htmlFor="counter-proof" className="block font-medium text-gray-700">
+        Comprobante de la transferencia (opcional, también podés adjuntarlo después)
+      </label>
+      <input id="counter-proof" type="file" accept={PROOF_ACCEPT} onChange={(e) => handle(e.target.files?.[0])} className="block w-full text-xs" />
+      {file && <p className="text-gray-500">{file.name} · {formatSize(file.size)}</p>}
+      {problem && <p role="alert" className="text-red-600 font-semibold">{problem}</p>}
+    </div>
+  );
+}
+
 function PaymentSelector({
+  methods,
+  proofFile,
+  onProofFileChange,
   method,
   isPaid,
   onMethodChange,
   onPaidChange,
 }: {
+  methods: PaymentMethod[];
+  proofFile: File | null;
+  onProofFileChange: (file: File | null) => void;
   method: PaymentMethod | null;
   isPaid: boolean;
   onMethodChange: (method: PaymentMethod | null) => void;
@@ -79,7 +110,7 @@ function PaymentSelector({
   return (
     <div className="mt-3 pt-3 border-t border-gray-200 flex flex-wrap items-center gap-3">
       <div className="flex flex-1 min-w-48 rounded-xl border border-gray-300 overflow-hidden text-xs" role="radiogroup" aria-label="Método de pago">
-        {COUNTER_PAYMENT_METHODS.map((option) => (
+        {methods.map((option) => (
           <button
             key={option}
             type="button"
@@ -96,15 +127,19 @@ function PaymentSelector({
           </button>
         ))}
       </div>
-      <label className="shrink-0 flex items-center gap-1.5 text-xs font-medium text-gray-700 cursor-pointer select-none">
-        <input
-          type="checkbox"
-          checked={isPaid}
-          onChange={(e) => onPaidChange(e.target.checked)}
-          className="w-4 h-4 accent-black"
-        />
-        Ya abonado
-      </label>
+      {/* Con MercadoPago el cobro lo confirma el sistema; en efectivo, tarjeta y transferencia lo registra el personal. */}
+      {method !== 'mercadopago' && (
+        <label className="shrink-0 flex items-center gap-1.5 text-xs font-medium text-gray-700 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={isPaid}
+            onChange={(e) => onPaidChange(e.target.checked)}
+            className="w-4 h-4 accent-black"
+          />
+          Ya abonado
+        </label>
+      )}
+      {method === 'transferencia' && <ProofPicker file={proofFile} onChange={onProofFileChange} />}
     </div>
   );
 }
@@ -114,6 +149,10 @@ interface OrderSummaryProps {
   total: number;
   units: number;
   itemsError?: string;
+  /** Medios que el local tiene habilitados. */
+  paymentMethods: PaymentMethod[];
+  proofFile: File | null;
+  onProofFileChange: (file: File | null) => void;
   paymentMethod: PaymentMethod | null;
   onPaymentMethodChange: (method: PaymentMethod | null) => void;
   isPaid: boolean;
@@ -171,6 +210,9 @@ export function OrderSummary(props: OrderSummaryProps) {
       {props.itemsError && <p className="text-xs text-red-600 mt-2">{props.itemsError}</p>}
 
       <PaymentSelector
+        methods={props.paymentMethods}
+        proofFile={props.proofFile}
+        onProofFileChange={props.onProofFileChange}
         method={props.paymentMethod}
         isPaid={props.isPaid}
         onMethodChange={props.onPaymentMethodChange}
@@ -200,7 +242,7 @@ export function OrderSummary(props: OrderSummaryProps) {
           type="button"
           onClick={props.onClear}
           disabled={submitting}
-          className="px-4 py-3 rounded-xl border border-gray-300 text-sm font-semibold text-gray-700 hover:bg-gray-100 transition disabled:opacity-50"
+          className="px-4 py-3 rounded-xl border border-gray-300 text-sm font-semibold text-gray-700 hover:bg-gray-100 transition disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300"
         >
           Limpiar
         </button>
@@ -208,9 +250,16 @@ export function OrderSummary(props: OrderSummaryProps) {
           type="submit"
           disabled={submitting || shiftClosed}
           title={shiftClosed ? 'Debés abrir la caja para confirmar pedidos' : undefined}
-          className="flex-1 min-w-40 bg-green-600 hover:bg-green-700 text-white rounded-xl py-3 font-bold transition disabled:opacity-60 disabled:cursor-not-allowed"
+          className="flex-1 min-w-40 bg-green-600 hover:bg-green-700 active:scale-[0.99] text-white rounded-xl py-3 font-bold transition disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg flex items-center justify-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-600"
         >
-          {submitting ? 'Registrando...' : 'Confirmar pedido'}
+          {submitting ? (
+            <>
+              <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin shrink-0" aria-hidden="true" />
+              <span>Registrando...</span>
+            </>
+          ) : (
+            'Confirmar pedido'
+          )}
         </button>
       </div>
     </section>

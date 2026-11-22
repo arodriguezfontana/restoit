@@ -93,6 +93,38 @@ export function ShiftDetailModal({ shift, onClose }: { shift: CashShiftDetail; o
           </div>
         )}
 
+        {shift.summary && (
+          <div className="bg-gray-50 p-3.5 rounded-xl border border-gray-200 text-xs space-y-2">
+            <div className="font-bold uppercase tracking-wider text-gray-600 text-[11px]">
+              Desglose por medio de pago
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+              <div>
+                <span className="text-gray-500 block">Efectivo</span>
+                <span className="font-bold text-gray-900">{formatCurrency(shift.summary.cash_sales)}</span>
+              </div>
+              <div>
+                <span className="text-gray-500 block">MercadoPago</span>
+                <span className="font-bold text-gray-900">{formatCurrency(shift.summary.mercadopago_sales)}</span>
+              </div>
+              <div>
+                <span className="text-gray-500 block">Transferencia</span>
+                <span className="font-bold text-gray-900">{formatCurrency(shift.summary.transferencia_sales)}</span>
+              </div>
+              <div>
+                <span className="text-gray-500 block">Tarjeta</span>
+                <span className="font-bold text-gray-900">{formatCurrency(shift.summary.tarjeta_sales)}</span>
+              </div>
+            </div>
+            {(shift.summary.pending_transfers ?? 0) > 0 && (
+              <div className="pt-1 border-t border-gray-200 text-amber-800 text-xs">
+                <span>Pendiente de cobro: </span>
+                <strong className="font-bold">{formatCurrency(shift.summary.pending_transfers ?? 0)}</strong>
+              </div>
+            )}
+          </div>
+        )}
+
         <div>
           <h4 className="text-xs font-bold uppercase tracking-wider text-gray-600 mb-2">
             Movimientos del turno ({movements.length})

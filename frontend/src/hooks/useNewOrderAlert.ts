@@ -7,7 +7,7 @@ import {
   unlockAudio,
 } from '@/utils/alertSound';
 
-/** Cada cuánto se repite la alerta mientras haya pedidos sin responder. */
+/** Cada cuánto se repite la alerta mientras haya pedidos nuevos sin ver. */
 export const ALERT_REPEAT_MS = 5000;
 
 const STORAGE_KEY = 'orderAlertSoundEnabled';
@@ -54,19 +54,19 @@ function useRepeatingAlert(ids: number[], enabled: boolean, playSound: () => boo
 }
 
 /**
- * Reproduce una alerta sonora (por defecto la de pedidos) mientras haya pedidos pendientes de aceptar/rechazar,
- * y otra distinta mientras haya pedidos confirmados que el cliente modificó y cocina todavía no vio.
+ * Reproduce una alerta sonora (por defecto la de pedidos) mientras haya pedidos nuevos que el personal todavía no vio,
+ * y otra distinta mientras haya pedidos que el cliente modificó y cocina todavía no vio.
  * Las dos se silencian juntas.
  */
 export function useNewOrderAlert(
-  pendingOrderIds: number[],
+  newOrderIds: number[],
   playSound: () => boolean = playAlertSound,
   modifiedOrderIds: number[] = []
 ) {
   const [enabled, setEnabled] = useState(readEnabledPreference);
   const audioState = useSyncExternalStore(subscribeAlertAudioState, getAlertAudioState);
 
-  useRepeatingAlert(pendingOrderIds, enabled, playSound);
+  useRepeatingAlert(newOrderIds, enabled, playSound);
   useRepeatingAlert(modifiedOrderIds, enabled, playModifiedOrderSound);
 
   // Silenciar (o activar) en una pestaña aplica también a las otras que tengan el panel abierto.

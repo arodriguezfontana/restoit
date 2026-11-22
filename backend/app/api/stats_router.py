@@ -13,8 +13,15 @@ from app.schemas.analytics_schemas import (
     UpdateBusinessGoalsPayload,
 )
 from app.schemas.ingredient_schemas import IngredientConsumptionResponse
+from app.schemas.predictive_schemas import (
+    CopilotActionExecutionPayload,
+    CopilotActionExecutionResponse,
+    CopilotAnswerResponse,
+    CopilotQuestionPayload,
+    PredictionsResponse,
+)
 from app.schemas.stats_schemas import BestSellingDayResponse, StatusDistributionResponse, TopProductResponse
-from app.services import analytics_service, stats_service
+from app.services import analytics_service, copilot_service, predictive_service, stats_service
 from app.services.ingredient_service import ingredient_consumption
 
 router = APIRouter(dependencies=[Depends(require_admin_pin)])
@@ -47,7 +54,7 @@ def get_top_products(
     limit: int = Query(5, ge=1, le=50),
     db: Session = Depends(get_db),
 ) -> list[TopProductResponse]:
-    """Productos más vendidos del período, sin contar los pedidos rechazados."""
+    """Productos más vendidos del período, sin contar los pedidos cancelados."""
     return [TopProductResponse.from_stat(stat) for stat in stats_service.top_products(db, date_from, date_to, limit)]
 
 
@@ -84,7 +91,7 @@ def get_dashboard_kpis(
     date_to: datetime | None = Query(None),
     db: Session = Depends(get_db),
 ) -> DashboardKPIsResponse:
-    """Calcula métricas clave avanzadas (ticket promedio, tasa de rechazo, margen bruto y costos,
+    """Calcula métricas clave avanzadas (ticket promedio, tasa de cancelación, margen bruto y costos,
 
     crecimiento porcentual vs. período previo y seguimiento de metas).
     """
@@ -121,3 +128,40 @@ def get_strategic_insight(
     kpis = analytics_service.calculate_dashboard_kpis(db, date_from, date_to)
     insight = analytics_service.generate_strategic_insight(kpis, db=db, date_from=date_from, date_to=date_to)
     return StrategicInsightResponse.model_validate(insight)
+
+
+# --- US-67: Analítica Predictiva y Copilot Q&A Comercial ---------------------------------------------
+
+
+@router.get("/predictions", dependencies=[Depends(get_current_admin)])
+def get_predictions(
+    weeks: int = Query(26, ge=4, le=52, description="Semanas históricas analizadas para la proyección (6 meses por defecto)"),
+    db: Session = Depends(get_db),
+) -> PredictionsResponse:
+    """Calcula proyecciones de pedidos y facturación a 7 días (diferenciando semana y fin de semana)
+
+    y demanda proyectada de insumos según recetas, con recomendaciones estratégicas de IA / Gemini.
+    """
+    return predictive_service.calculate_predictions(db, historical_weeks=weeks)
+
+
+@router.post("/copilot/ask", dependencies=[Depends(get_current_admin)])
+def ask_copilot(
+    payload: CopilotQuestionPayload,
+    db: Session = Depends(get_db),
+) -> CopilotAnswerResponse:
+    """Asistente Q&A comercial que responde preguntas en lenguaje natural ejecutando funciones sobre
+
+    la base de datos real con cero alucinaciones numéricas y citando el período consultado.
+    """
+    return copilot_service.ask_copilot(db, payload)
+
+
+@router.post("/copilot/execute-action", dependencies=[Depends(get_current_admin)])
+def execute_copilot_action(
+    payload: CopilotActionExecutionPayload,
+    db: Session = Depends(get_db),
+) -> CopilotActionExecutionResponse:
+    """Ejecuta una acción comercial aprobada por el administrador generada por el Copilot (Human-in-the-Loop)."""
+    return copilot_service.execute_copilot_action(db, payload)
+

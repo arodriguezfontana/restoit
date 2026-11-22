@@ -3,10 +3,14 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConfiguracionWebView } from '@/components/ConfiguracionWebView';
 import * as storeConfigService from '@/services/storeConfigService';
+import * as delayRuleService from '@/services/delayRuleService';
+import * as securityService from '@/services/securityService';
 import type { StoreConfig } from '@/types/storeConfig';
 import { resizeImageToDataUrl } from '@/utils/images';
 
 vi.mock('@/services/storeConfigService');
+vi.mock('@/services/delayRuleService');
+vi.mock('@/services/securityService');
 vi.mock('@/utils/images');
 
 const initialConfig: StoreConfig = {
@@ -21,7 +25,25 @@ const initialConfig: StoreConfig = {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(securityService.fetchPinStatus).mockResolvedValue({
+    admin_pin_required: true,
+    admin_blocked: false,
+    admin_blocked_seconds_remaining: 0,
+    cash_pin_required: false,
+    cash_blocked: false,
+    cash_blocked_seconds_remaining: 0,
+  });
+  vi.mocked(securityService.verifyAdminPin).mockResolvedValue({
+    token: 'admin-mock-token',
+    expires_in: 3600,
+    message: 'PIN válido',
+  });
   vi.mocked(storeConfigService.fetchStoreConfig).mockResolvedValue(initialConfig);
+  vi.mocked(delayRuleService.fetchDelaySettings).mockResolvedValue({
+    smart_delay_enabled: true,
+    pickup_rules: [],
+    delivery_rules: [],
+  });
   vi.mocked(resizeImageToDataUrl).mockResolvedValue('data:image/jpeg;base64,fondo-propio');
   vi.mocked(storeConfigService.updateStoreConfig).mockImplementation(async (payload) => ({
     id: 1,
@@ -33,6 +55,12 @@ beforeEach(() => {
   }));
 });
 
+/** Muestra la configuración y abre la pestaña indicada (la página se divide en secciones). */
+async function renderEnPestana(nombre: string) {
+  render(<ConfiguracionWebView />);
+  await userEvent.click(await screen.findByRole('tab', { name: nombre }));
+}
+
 describe('ConfiguracionWebView', () => {
   it('carga y muestra los datos actuales del local en los campos', async () => {
     render(<ConfiguracionWebView />);
@@ -43,14 +71,37 @@ describe('ConfiguracionWebView', () => {
     expect(screen.queryByLabelText('Horarios de atención')).not.toBeInTheDocument();
     expect(screen.getByDisplayValue('11 4444-1234')).toBeInTheDocument();
     expect(screen.getByText('Sin logo')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('tab', { name: 'Apariencia' }));
     expect(screen.getByRole('button', { name: 'Negro' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('divide la configuración en secciones y las demoras no muestran el botón de guardar', async () => {
+    render(<ConfiguracionWebView />);
+
+    await screen.findByRole('tablist', { name: 'Secciones de configuración' });
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+      'Local',
+      'Demoras',
+      'Cupones',
+      'Medios de pago',
+      'Apariencia',
+      'Seguridad',
+    ]);
+    expect(screen.getByRole('button', { name: 'Guardar cambios' })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Demoras' }));
+    expect(await screen.findByText('Demora de los pedidos')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Guardar cambios' })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Cupones' }));
+    expect(await screen.findByText('Crear nuevo cupón de descuento')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Guardar cambios' })).not.toBeInTheDocument();
   });
 
   it('permite cambiar el color principal seleccionando un estilo predefinido y no incluye rojo', async () => {
     const user = userEvent.setup();
-    render(<ConfiguracionWebView />);
+    await renderEnPestana('Apariencia');
 
-    expect(await screen.findByDisplayValue('Pizzería Los Troncos')).toBeInTheDocument();
 
     // El color rojo ya no debe figurar como tema preseleccionado
     expect(screen.queryByRole('button', { name: 'Rojo' })).not.toBeInTheDocument();
@@ -76,9 +127,8 @@ describe('ConfiguracionWebView', () => {
 
   it('permite elegir un color personalizado usando el botón arcoíris y la paleta de colores', async () => {
     const user = userEvent.setup();
-    render(<ConfiguracionWebView />);
+    await renderEnPestana('Apariencia');
 
-    expect(await screen.findByDisplayValue('Pizzería Los Troncos')).toBeInTheDocument();
 
     const rainbowButton = screen.getByRole('button', { name: 'Color personalizado' });
     expect(rainbowButton).toBeInTheDocument();
@@ -129,11 +179,12 @@ describe('ConfiguracionWebView', () => {
     expect(await screen.findByText(/¡Configuración guardada exitosamente!/i)).toBeInTheDocument();
   });
 
-  it('no muestra el campo para agregar el alias de MercadoPago', async () => {
+  it('no muestra el campo para agregar el alias de MercadoPago ni en la vista previa', async () => {
     render(<ConfiguracionWebView />);
 
     await screen.findByDisplayValue('Pizzería Los Troncos');
     expect(screen.queryByLabelText(/Alias de MercadoPago/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Alias MercadoPago/i)).not.toBeInTheDocument();
   });
 
   it('permite subir un archivo de imagen como logo y luego quitarlo', async () => {
@@ -187,9 +238,8 @@ describe('ConfiguracionWebView', () => {
 
   it('permite elegir la imagen de fondo para el inicio de sesión', async () => {
     const user = userEvent.setup();
-    render(<ConfiguracionWebView />);
+    await renderEnPestana('Apariencia');
 
-    expect(await screen.findByDisplayValue('Pizzería Los Troncos')).toBeInTheDocument();
 
     const bistroBtn = screen.getByRole('button', { name: 'Salón' });
     expect(bistroBtn).toHaveAttribute('aria-pressed', 'true');
@@ -213,8 +263,7 @@ describe('ConfiguracionWebView', () => {
 
   it('permite subir una imagen propia desde el dispositivo como fondo de inicio de sesión', async () => {
     const user = userEvent.setup();
-    render(<ConfiguracionWebView />);
-    expect(await screen.findByDisplayValue('Pizzería Los Troncos')).toBeInTheDocument();
+    await renderEnPestana('Apariencia');
 
     const file = new File(['fake-image-bytes'], 'fondo.jpg', { type: 'image/jpeg' });
     fireEvent.change(screen.getByLabelText('Subir imagen de fondo'), { target: { files: [file] } });
@@ -238,7 +287,7 @@ describe('ConfiguracionWebView', () => {
       login_bg_image: 'data:image/jpeg;base64,guardada',
     });
     const user = userEvent.setup();
-    render(<ConfiguracionWebView />);
+    await renderEnPestana('Apariencia');
 
     expect(await screen.findByAltText('Imagen propia')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Quitar' }));
@@ -250,8 +299,7 @@ describe('ConfiguracionWebView', () => {
   describe('fondo del panel de administración', () => {
     it('arranca liso y se puede elegir una de las imágenes incluidas', async () => {
       const user = userEvent.setup();
-      render(<ConfiguracionWebView />);
-      await screen.findByDisplayValue('Pizzería Los Troncos');
+      await renderEnPestana('Apariencia');
       expect(screen.getByRole('button', { name: 'Panel: fondo liso' })).toHaveAttribute('aria-pressed', 'true');
 
       await user.click(screen.getByRole('button', { name: 'Panel: Cocina' }));
@@ -270,8 +318,7 @@ describe('ConfiguracionWebView', () => {
 
     it('permite elegir un color liso personalizado para el panel', async () => {
       const user = userEvent.setup();
-      render(<ConfiguracionWebView />);
-      await screen.findByDisplayValue('Pizzería Los Troncos');
+      await renderEnPestana('Apariencia');
 
       fireEvent.change(screen.getByLabelText('Elegir color de fondo del panel'), { target: { value: '#1e3a8a' } });
 
@@ -286,8 +333,7 @@ describe('ConfiguracionWebView', () => {
 
     it('al abrir con un color guardado lo muestra elegido', async () => {
       vi.mocked(storeConfigService.fetchStoreConfig).mockResolvedValue({ ...initialConfig, panel_bg: 'color', panel_bg_color: '#334155' });
-      render(<ConfiguracionWebView />);
-      await screen.findByDisplayValue('Pizzería Los Troncos');
+      await renderEnPestana('Apariencia');
 
       expect(screen.getByRole('button', { name: 'Panel: color liso' })).toHaveAttribute('aria-pressed', 'true');
       expect(screen.getByLabelText('Elegir color de fondo del panel')).toHaveValue('#334155');
@@ -295,8 +341,7 @@ describe('ConfiguracionWebView', () => {
 
     it('permite subir una imagen propia para el panel', async () => {
       const user = userEvent.setup();
-      render(<ConfiguracionWebView />);
-      await screen.findByDisplayValue('Pizzería Los Troncos');
+      await renderEnPestana('Apariencia');
 
       const file = new File(['fake-image-bytes'], 'fondo.jpg', { type: 'image/jpeg' });
       fireEvent.change(screen.getByLabelText('Subir imagen de fondo del panel'), { target: { files: [file] } });
@@ -313,8 +358,7 @@ describe('ConfiguracionWebView', () => {
     });
 
     it('rechaza un archivo que no es una imagen', async () => {
-      render(<ConfiguracionWebView />);
-      await screen.findByDisplayValue('Pizzería Los Troncos');
+      await renderEnPestana('Apariencia');
 
       const file = new File(['texto'], 'notas.txt', { type: 'text/plain' });
       fireEvent.change(screen.getByLabelText('Subir imagen de fondo del panel'), { target: { files: [file] } });
@@ -330,8 +374,7 @@ describe('ConfiguracionWebView', () => {
         panel_bg_image: 'data:image/jpeg;base64,guardada',
       });
       const user = userEvent.setup();
-      render(<ConfiguracionWebView />);
-      await screen.findByDisplayValue('Pizzería Los Troncos');
+      await renderEnPestana('Apariencia');
       expect(screen.getByRole('button', { name: 'Panel: imagen propia' })).toHaveAttribute('aria-pressed', 'true');
 
       await user.click(screen.getByRole('button', { name: 'Quitar imagen propia del panel' }));
@@ -341,15 +384,24 @@ describe('ConfiguracionWebView', () => {
   });
 
   describe('Seguridad y PIN de Caja', () => {
-    it('permite habilitar protección por PIN, valida 4 dígitos y lo guarda', async () => {
+    it('pide PIN de admin para habilitar protección por PIN, valida 4 dígitos y lo guarda', async () => {
       const user = userEvent.setup();
-      render(<ConfiguracionWebView />);
-      await screen.findByDisplayValue('Pizzería Los Troncos');
+      await renderEnPestana('Seguridad');
 
-      const checkbox = screen.getByRole('checkbox', { name: /Proteger el módulo de Caja/i });
+      const checkbox = screen.getByRole('checkbox', { name: /Proteger Caja con un PIN de 4 dígitos/i });
       expect(checkbox).not.toBeChecked();
 
+      // Al hacer clic, se abre el modal de PIN de admin
       await user.click(checkbox);
+      expect(screen.getByRole('heading', { name: 'Autorización de Administrador' })).toBeInTheDocument();
+
+      // Ingresar los 4 dígitos del PIN de admin
+      await user.keyboard('1234');
+      await waitFor(() => {
+        expect(securityService.verifyAdminPin).toHaveBeenCalledWith('1234');
+        expect(screen.queryByRole('heading', { name: 'Autorización de Administrador' })).not.toBeInTheDocument();
+      });
+
       expect(checkbox).toBeChecked();
 
       const pinInput = screen.getByLabelText(/PIN de Caja/i);

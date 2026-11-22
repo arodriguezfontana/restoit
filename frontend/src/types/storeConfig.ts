@@ -87,6 +87,9 @@ export type LoginBgOption = 'bistro' | 'kitchen' | 'trattoria' | 'custom';
 /** Fondo del panel de administración: 'none' = liso; 'color' = color liso a elección (ver panel_bg_color); 'custom' = imagen propia (ver panel_bg_image). */
 export type PanelBgOption = 'none' | 'color' | 'bistro' | 'kitchen' | 'trattoria' | 'custom';
 
+/** A qué pedidos se cobra con tarjeta: retiro, envío o ambos. */
+export type CardAppliesTo = 'pickup' | 'delivery' | 'both';
+
 export interface StoreConfig {
   id?: number;
   store_name: string;
@@ -100,6 +103,18 @@ export interface StoreConfig {
   panel_bg_image?: string | null;
   panel_bg_color?: string | null;
   mp_alias?: string | null;
+  accepts_cash?: boolean;
+  accepts_transfer?: boolean;
+  transfer_alias?: string | null;
+  transfer_cbu?: string | null;
+  transfer_holder?: string | null;
+  accepts_card?: boolean;
+  card_applies_to?: CardAppliesTo;
+  accepts_mercadopago?: boolean;
+  /** Horas que se guarda el comprobante de una transferencia. */
+  proof_retention_hours?: number;
+  /** Si el sistema tiene credenciales de MercadoPago (sin ellas no se puede activar). */
+  mercadopago_available?: boolean;
   cash_pin_enabled?: boolean;
   cash_pin?: string | null;
 }
@@ -116,6 +131,15 @@ export interface StoreConfigUpdatePayload {
   panel_bg_image?: string | null;
   panel_bg_color?: string | null;
   mp_alias?: string | null;
+  accepts_cash?: boolean;
+  accepts_transfer?: boolean;
+  transfer_alias?: string | null;
+  transfer_cbu?: string | null;
+  transfer_holder?: string | null;
+  accepts_card?: boolean;
+  card_applies_to?: CardAppliesTo;
+  accepts_mercadopago?: boolean;
+  proof_retention_hours?: number;
   cash_pin_enabled?: boolean;
   cash_pin?: string | null;
 }

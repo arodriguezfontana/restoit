@@ -24,8 +24,8 @@ function column(title: string) {
 }
 
 const ORDERS = [
-  makeOrder({ id: 1, customer_name: 'Pendiente Ahora', status: 'Pendiente' }),
-  makeOrder({ id: 2, customer_name: 'Pendiente Programado', status: 'Pendiente', scheduled_for: '2026-10-04T00:30:00Z' }),
+  makeOrder({ id: 1, customer_name: 'Nuevo Ahora', status: 'Confirmado', needs_attention: true }),
+  makeOrder({ id: 2, customer_name: 'Nuevo Programado', status: 'Confirmado', scheduled_for: '2026-10-04T00:30:00Z' }),
   makeOrder({ id: 3, customer_name: 'Ya Confirmado', status: 'Confirmado', estimated_minutes: 20 }),
   makeOrder({ id: 4, customer_name: 'Viajando', status: 'En Camino', trip_id: 9, trip_stop: 1, eta_minutes: 12 }),
   makeOrder({ id: 5, customer_name: 'Para Retirar', status: 'Listo para Retirar', delivery_method: 'retiro' }),
@@ -36,26 +36,17 @@ beforeEach(() => {
   localStorage.clear();
   service.fetchOrders.mockResolvedValue(ORDERS);
   service.fetchOrderDetail.mockResolvedValue(makeOrderDetail());
-  // Con historial suficiente la demora se calcula sola: confirmar no pide minutos.
-  service.fetchOrderDelayEstimate.mockResolvedValue({
-    mode: 'smart',
-    estimated_minutes: 25,
-    samples: 40,
-    min_samples: 30,
-    queue_size: 1,
-    suggested_minutes: 18,
-  });
 });
 
 describe('ComandasBoard', () => {
   it('pide solo los pedidos activos y los reparte por columna', async () => {
     render(<ComandasBoard />);
 
-    expect(await screen.findByText('Pendiente Ahora')).toBeInTheDocument();
+    expect(await screen.findByText('Nuevo Ahora')).toBeInTheDocument();
     expect(service.fetchOrders).toHaveBeenCalledWith({
-      status: ['Pendiente', 'Confirmado', 'En Camino', 'Listo para Retirar'],
+      status: ['Confirmado', 'En Camino', 'Listo para Retirar'],
     });
-    expect(within(column('Confirmados')).getByText('Ya Confirmado')).toBeInTheDocument();
+    expect(within(column('En preparación')).getByText('Ya Confirmado')).toBeInTheDocument();
     expect(within(column('En Camino')).getByText('Viajando')).toBeInTheDocument();
     expect(within(column('Listo para Retirar')).getByText('Para Retirar')).toBeInTheDocument();
   });
@@ -81,32 +72,67 @@ describe('ComandasBoard', () => {
     }
   });
 
-  it('separa los pendientes para ahora de los programados, pero el contador los incluye a todos', async () => {
+  it('ya no hay una columna de pendientes: todos los pedidos entran en preparación', async () => {
     render(<ComandasBoard />);
-    const user = userEvent.setup();
-    await screen.findByText('Pendiente Ahora');
-    const pendientes = column('Pendientes');
+    await screen.findByText('Nuevo Ahora');
 
-    expect(within(pendientes).getByText('2')).toBeInTheDocument();
-    expect(within(pendientes).queryByText('Pendiente Programado')).not.toBeInTheDocument();
-
-    await user.click(within(pendientes).getByRole('button', { name: 'Programados' }));
-
-    expect(within(pendientes).getByText('Pendiente Programado')).toBeInTheDocument();
-    expect(within(pendientes).queryByText('Pendiente Ahora')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Pendientes' })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent)).toEqual([
+      'En preparación',
+      'En Camino',
+      'Listo para Retirar',
+    ]);
   });
 
-  it('confirmar un pedido lo mueve a la columna de confirmados', async () => {
-    service.updateOrderStatus.mockResolvedValue({ ...ORDERS[0], status: 'Confirmado', estimated_minutes: 15 });
+  it('separa los pedidos para ahora de los programados, pero el contador los incluye a todos', async () => {
     render(<ComandasBoard />);
     const user = userEvent.setup();
-    await screen.findByText('Pendiente Ahora');
+    await screen.findByText('Nuevo Ahora');
+    const enPreparacion = column('En preparación');
 
-    await user.click(within(column('Pendientes')).getByRole('button', { name: 'Confirmar' }));
+    expect(within(enPreparacion).getByText('3')).toBeInTheDocument();
+    expect(within(enPreparacion).queryByText('Nuevo Programado')).not.toBeInTheDocument();
 
-    expect(service.updateOrderStatus).toHaveBeenCalledWith(1, 'Confirmado', undefined);
-    await waitFor(() => expect(within(column('Confirmados')).getByText('Pendiente Ahora')).toBeInTheDocument());
-    expect(within(column('Pendientes')).queryByText('Pendiente Ahora')).not.toBeInTheDocument();
+    await user.click(within(enPreparacion).getByRole('button', { name: 'Programados' }));
+
+    expect(within(enPreparacion).getByText('Nuevo Programado')).toBeInTheDocument();
+    expect(within(enPreparacion).queryByText('Nuevo Ahora')).not.toBeInTheDocument();
+  });
+
+  it('marcar un pedido En Camino lo mueve a esa columna sin pasar por aceptar ni rechazar', async () => {
+    service.updateOrderStatus.mockResolvedValue({ ...ORDERS[0], status: 'En Camino' });
+    render(<ComandasBoard />);
+    const user = userEvent.setup();
+    await screen.findByText('Nuevo Ahora');
+
+    await user.click(within(column('En preparación')).getAllByRole('button', { name: 'Marcar En Camino' })[0]);
+
+    expect(service.updateOrderStatus).toHaveBeenCalledWith(1, 'En Camino');
+    await waitFor(() => expect(within(column('En Camino')).getByText('Nuevo Ahora')).toBeInTheDocument());
+    expect(within(column('En preparación')).queryByText('Nuevo Ahora')).not.toBeInTheDocument();
+  });
+
+  it('un pedido nuevo se marca como visto desde su tarjeta', async () => {
+    service.markOrderSeen.mockResolvedValue({ ...ORDERS[0], needs_attention: false });
+    render(<ComandasBoard />);
+    const user = userEvent.setup();
+    await screen.findByText('Nuevo Ahora');
+
+    await user.click(within(column('En preparación')).getByRole('button', { name: 'Visto' }));
+
+    expect(service.markOrderSeen).toHaveBeenCalledWith(1);
+    await waitFor(() => expect(screen.queryByText('Pedido nuevo')).not.toBeInTheDocument());
+  });
+
+  it('abrir el detalle de un pedido nuevo lo marca como visto', async () => {
+    service.markOrderSeen.mockResolvedValue({ ...ORDERS[0], needs_attention: false });
+    render(<ComandasBoard />);
+    const user = userEvent.setup();
+    await screen.findByText('Nuevo Ahora');
+
+    await user.click(screen.getByText('Nuevo Ahora'));
+
+    expect(service.markOrderSeen).toHaveBeenCalledWith(1);
   });
 
   it('finalizar un pedido abonado lo saca del tablero', async () => {
@@ -254,7 +280,7 @@ describe('ComandasBoard', () => {
 
     await waitFor(() => expect(screen.queryByText('Viajando')).not.toBeInTheDocument());
     expect(service.updateOrderPayment).toHaveBeenCalledWith(4, true);
-    expect(service.updateOrderStatus).toHaveBeenCalledWith(4, 'Finalizado', undefined);
+    expect(service.updateOrderStatus).toHaveBeenCalledWith(4, 'Finalizado');
     expect(service.updateOrderPayment.mock.invocationCallOrder[0]).toBeLessThan(
       service.updateOrderStatus.mock.invocationCallOrder[0]
     );
@@ -275,36 +301,96 @@ describe('ComandasBoard', () => {
     expect(screen.getByText('Viajando')).toBeInTheDocument();
   });
 
+  it.each(['tarjeta', 'transferencia', 'efectivo'] as const)(
+    'al finalizar sin cobrar con %s aparece el aviso de pedido sin abonar',
+    async (method) => {
+      service.fetchOrders.mockResolvedValue([
+        makeOrder({
+          id: 40,
+          shift_number: 40,
+          customer_name: 'Cliente Pago',
+          status: 'Listo para Retirar',
+          delivery_method: 'retiro',
+          payment_method: method,
+          is_paid: false,
+          total_amount: 15000,
+        }),
+      ]);
+      render(<ComandasBoard />);
+      const user = userEvent.setup();
+      await screen.findByText('Cliente Pago');
+
+      await user.click(within(column('Listo para Retirar')).getByRole('button', { name: 'Finalizar' }));
+
+      const dialog = await screen.findByRole('dialog', { name: 'El pedido aún no está pago' });
+      expect(dialog).toBeInTheDocument();
+      expect(dialog).toHaveTextContent('Pedido #40');
+      expect(dialog).toHaveTextContent('15.000');
+    }
+  );
+
+  it('el despacho del pedido no se impide por estar sin abonar o sin comprobante', async () => {
+    service.fetchOrders.mockResolvedValue([
+      makeOrder({
+        id: 50,
+        customer_name: 'Sin Abonar En Viaje',
+        status: 'En Camino',
+        delivery_method: 'domicilio',
+        delivery_driver_id: 1,
+        delivery_driver_name: 'Nico',
+        payment_method: 'transferencia',
+        is_paid: false,
+        payment_proof: null,
+      }),
+    ]);
+    service.dispatchTrip.mockResolvedValue({
+      id: 10,
+      delivery_driver_id: 1,
+      delivery_driver_name: 'Nico',
+      dispatched_at: '2026-11-06T20:00:00Z',
+      total_minutes: 15,
+      stops: [
+        { order_id: 50, stop: 1, address: 'Calle 123', customer_name: 'Sin Abonar En Viaje', eta_minutes: 15 },
+      ],
+    });
+    render(<ComandasBoard />);
+    const user = userEvent.setup();
+    await screen.findByText('Sin Abonar En Viaje');
+
+    await user.click(screen.getByRole('button', { name: 'Iniciar viaje de Nico' }));
+
+    expect(service.dispatchTrip).toHaveBeenCalledWith(1);
+    expect(await screen.findByText('En viaje · llega en ~15 min')).toBeInTheDocument();
+  });
+
   it('indica junto a Confirmados cuántos pedidos fueron modificados', async () => {
     service.fetchOrders.mockResolvedValue([
       ...ORDERS,
       makeOrder({ id: 6, customer_name: 'Agregó una Coca', status: 'Confirmado', kitchen_update_pending: true }),
-      makeOrder({ id: 7, customer_name: 'Pendiente con agregados', status: 'Pendiente', kitchen_update_pending: true }),
     ]);
     render(<ComandasBoard />);
     await screen.findByText('Agregó una Coca');
 
-    expect(within(column('Confirmados')).getByText('1 modificado')).toBeInTheDocument();
-    expect(within(column('Pendientes')).queryByText(/^\d+ modificados?$/)).not.toBeInTheDocument();
+    expect(within(column('En preparación')).getByText('1 modificado')).toBeInTheDocument();
   });
 
   it('sin pedidos modificados no muestra el indicador', async () => {
     render(<ComandasBoard />);
     await screen.findByText('Ya Confirmado');
 
-    expect(within(column('Confirmados')).queryByText(/modificado/)).not.toBeInTheDocument();
+    expect(within(column('En preparación')).queryByText(/modificado/)).not.toBeInTheDocument();
   });
 
   it('muestra el error si el cambio de estado falla y deja el pedido donde estaba', async () => {
-    service.updateOrderStatus.mockRejectedValue({ message: "No se puede pasar de 'Rechazado' a 'Confirmado'." });
+    service.updateOrderStatus.mockRejectedValue({ message: "No se puede pasar de 'Cancelado' a 'En Camino'." });
     render(<ComandasBoard />);
     const user = userEvent.setup();
-    await screen.findByText('Pendiente Ahora');
+    await screen.findByText('Nuevo Ahora');
 
-    await user.click(within(column('Pendientes')).getByRole('button', { name: 'Confirmar' }));
+    await user.click(within(column('En preparación')).getAllByRole('button', { name: 'Marcar En Camino' })[0]);
 
-    expect(await screen.findByText("No se puede pasar de 'Rechazado' a 'Confirmado'.")).toBeInTheDocument();
-    expect(within(column('Pendientes')).getByText('Pendiente Ahora')).toBeInTheDocument();
+    expect(await screen.findByText("No se puede pasar de 'Cancelado' a 'En Camino'.")).toBeInTheDocument();
+    expect(within(column('En preparación')).getByText('Nuevo Ahora')).toBeInTheDocument();
   });
 
   it('avisa si no se pudieron cargar las comandas', async () => {
@@ -322,7 +408,7 @@ describe('ComandasBoard', () => {
     render(<ComandasBoard />);
     const user = userEvent.setup();
     await screen.findByText('Cliente 0');
-    const confirmados = column('Confirmados');
+    const confirmados = column('En preparación');
 
     expect(within(confirmados).getByText('1 de 2')).toBeInTheDocument();
     expect(within(confirmados).queryByText('Cliente 5')).not.toBeInTheDocument();
@@ -367,35 +453,12 @@ describe('ComandasBoard', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Cancelar pedido' }));
     await user.click(within(dialog).getByRole('button', { name: 'Sí, cancelar' }));
 
-    expect(service.updateOrderStatus).toHaveBeenCalledWith(3, 'Cancelado', undefined);
+    expect(service.updateOrderStatus).toHaveBeenCalledWith(3, 'Cancelado');
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(screen.queryByText('Ya Confirmado')).not.toBeInTheDocument();
   });
 
-  it('el modo simulación carga pedidos de prueba sin llamar a la API', async () => {
-    render(<ComandasBoard />);
-    const user = userEvent.setup();
-    await screen.findByText('Pendiente Ahora');
 
-    await user.click(screen.getByRole('button', { name: 'Simular 50 Pedidos' }));
-
-    expect(screen.getByText('Panel de Comandas (Modo Simulación)')).toBeInTheDocument();
-    expect(screen.queryByText('Pendiente Ahora')).not.toBeInTheDocument();
-    await user.click(within(column('Pendientes')).getAllByRole('button', { name: 'Rechazar' })[0]);
-    expect(service.updateOrderStatus).not.toHaveBeenCalled();
-  });
-
-  it('el modo simulación no se ofrece en producción', async () => {
-    vi.stubEnv('DEV', false);
-    try {
-      render(<ComandasBoard />);
-      await screen.findByText('Pendiente Ahora');
-
-      expect(screen.queryByRole('button', { name: 'Simular 50 Pedidos' })).not.toBeInTheDocument();
-    } finally {
-      vi.unstubAllEnvs();
-    }
-  });
   describe('Separación de comandas por sector', () => {
     const SECTOR_ORDERS = [
       makeOrder({
@@ -487,7 +550,7 @@ describe('ComandasBoard', () => {
 
   describe('buscador', () => {
     const SEARCHABLE = [
-      makeOrder({ id: 11, shift_number: 66, customer_name: 'Emanuel', status: 'Pendiente', shipping_address: 'Rodolfo Lopez 55', customer_phone: '1162939338' }),
+      makeOrder({ id: 11, shift_number: 66, customer_name: 'Emanuel', status: 'Confirmado', shipping_address: 'Rodolfo Lopez 55', customer_phone: '1162939338' }),
       makeOrder({ id: 12, shift_number: 7, customer_name: 'Fede', status: 'Confirmado', estimated_minutes: 20, shipping_address: 'Belgrano 95', customer_phone: '1144445555' }),
       makeOrder({ id: 13, shift_number: 8, customer_name: 'Laura', status: 'En Camino', shipping_address: 'Mitre 10', customer_phone: '1100000000' }),
     ];
@@ -501,9 +564,9 @@ describe('ComandasBoard', () => {
       await user.type(screen.getByRole('textbox', { name: 'Buscar comandas' }), 'fede');
 
       await waitFor(() => expect(screen.queryByText('Emanuel')).not.toBeInTheDocument());
-      expect(within(column('Confirmados')).getByText('Fede')).toBeInTheDocument();
+      expect(within(column('En preparación')).getByText('Fede')).toBeInTheDocument();
       expect(screen.queryByText('Laura')).not.toBeInTheDocument();
-      // Las cuatro columnas siguen ahí.
+      // Las tres columnas siguen ahí.
       expect(screen.getByRole('heading', { name: 'En Camino' })).toBeInTheDocument();
     });
 

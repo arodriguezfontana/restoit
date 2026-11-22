@@ -8,7 +8,7 @@ import {
 import { setAdminPrivilegedToken, setCashPrivilegedToken } from '@/services/api';
 import { PinSecurityContext, type PinSecurityContextValue } from './pin-security-context';
 
-const INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutos de inactividad
+const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutos de inactividad (triplicado para estadísticas y caja)
 
 export function PinSecurityProvider({ children }: { children: ReactNode }) {
   const [adminToken, setAdminTokenState] = useState<string | null>(null);

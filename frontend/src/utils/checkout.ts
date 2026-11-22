@@ -2,11 +2,8 @@ import type {
   CartItem,
   CheckoutFormData,
   CheckoutFormErrors,
-  DeliveryMethod,
   WebOrderItemPayload,
-  WebPaymentMethod,
 } from '@/types/order';
-import { formatCurrency } from '@/utils/currency';
 import { PHONE_PATTERN } from '@/utils/customerValidation';
 
 function phoneError(phone: string): string | undefined {
@@ -34,12 +31,4 @@ export function toWebOrderItem(item: CartItem): WebOrderItemPayload {
     ...(item.custom_name ? { custom_name: item.custom_name } : {}),
     ...(item.modifications && item.modifications.length > 0 ? { modifications: item.modifications } : {}),
   };
-}
-
-/** Aclaración bajo el medio de pago: cómo y cuándo se paga. */
-export function paymentHint(method: WebPaymentMethod, delivery: DeliveryMethod, total: number): string {
-  if (method === 'mercadopago') {
-    return `Al confirmar te llevamos a MercadoPago para pagar ${formatCurrency(total)} de forma segura.`;
-  }
-  return delivery === 'domicilio' ? 'Pagás en efectivo al recibir el pedido.' : 'Pagás en efectivo al retirar el pedido.';
 }
