@@ -108,7 +108,7 @@ describe('MenuPage', () => {
     expect(await screen.findByRole('heading', { name: 'Pizzas' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Bebidas' })).toBeInTheDocument();
     expect(plain(within(productCard('Fugazzeta')).getByText(/\$/).textContent)).toBe('$ 9.500,00');
-    expect(within(productCard('Fugazzeta')).getByText('vegetariano')).toBeInTheDocument();
+    expect(within(productCard('Fugazzeta')).getByText(/vegetariano/i)).toBeInTheDocument();
     expect(screen.getByText('Tu carrito está vacío')).toBeInTheDocument();
     expect(screen.getByText('Agregá productos al carrito para continuar.')).toBeInTheDocument();
   });
@@ -229,6 +229,7 @@ describe('MenuPage', () => {
         { product_id: COCA.id, quantity: 1 },
       ],
       payment_method: 'efectivo',
+      coupon_code: null,
     });
     expect(await screen.findByRole('heading', { name: 'Pedido #321' })).toBeInTheDocument();
     expect(mercadopago.redirectToCheckout).not.toHaveBeenCalled();
@@ -502,6 +503,15 @@ describe('MenuPage', () => {
     const carrito = cart();
     expect(within(carrito).getByText('Pizza Grande [1/2 Muzzarella | 1/2 Fugazzeta]')).toBeInTheDocument();
     expect(within(carrito).getAllByText(/9\.500/).length).toBeGreaterThanOrEqual(1);
+
+    // Tener una pizza mitad y mitad no rompe agregar ni modificar pizzas enteras normales
+    const muzzaCard = productCard('Pizza Muzzarella');
+    expect(within(muzzaCard).getByRole('button', { name: 'Agregar' })).toBeInTheDocument();
+    await user.click(within(muzzaCard).getByRole('button', { name: 'Agregar' }));
+    expect(within(muzzaCard).getByRole('button', { name: 'Agregar una unidad de Pizza Muzzarella' })).toBeInTheDocument();
+    await user.click(within(muzzaCard).getByRole('button', { name: 'Agregar una unidad de Pizza Muzzarella' }));
+    expect(within(muzzaCard).getByText('2')).toBeInTheDocument();
+    expect(within(carrito).getByText('Pizza Muzzarella')).toBeInTheDocument();
   });
 
   it('permite buscar productos por texto en el menú', async () => {

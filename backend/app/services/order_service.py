@@ -27,7 +27,7 @@ from app.models.order import (
 )
 from app.models.user import User
 from app.repositories import delivery_driver_repository, order_repository, product_repository, promotion_repository
-from app.services import cash_shift_service
+from app.services import cash_shift_service, coupon_service
 from app.services.business_hours_service import verificar_local_abierto
 from app.services.client_service import upsert_client
 from app.services.delivery_time_service import estimate_delay
@@ -273,6 +273,7 @@ def create_web_order(
     request: OrderRequest,
     user: User | None = None,
     payment_method: PaymentMethod | str = PaymentMethod.CASH,
+    coupon_code: str | None = None,
 ) -> Order:
     """Pedido hecho desde la web: entra directamente 'Confirmado' (con la demora estimada del local, si la hay) y
     queda sin abonar. El local puede cancelarlo después.
@@ -290,6 +291,17 @@ def create_web_order(
     order.payment_method = PaymentMethod(payment_method).value
     order.is_paid = False
     _attach_open_shift(db, order)
+
+    if coupon_code:
+        coupon_res = coupon_service.validate_web_coupon(db, coupon_code)
+        if coupon_res.valid:
+            discount_amount = round(order.total_amount * Decimal(str(coupon_res.discount_percentage)) / Decimal("100"), 2)
+            order.total_amount = max(Decimal("0"), order.total_amount - discount_amount)
+            coupon_note = f"[Cupón aplicado: {coupon_res.code} ({coupon_res.discount_percentage}% OFF - Ahorro: ${discount_amount:,.2f})]"
+            order.notes = f"{order.notes}\n{coupon_note}".strip() if order.notes else coupon_note
+        else:
+            raise BusinessRuleError(coupon_res.message or f"El cupón '{coupon_code}' no es válido.")
+
     return _save(db, order)
 
 

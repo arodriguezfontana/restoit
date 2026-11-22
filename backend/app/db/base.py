@@ -9,6 +9,7 @@ from app.models.business_goal import BusinessGoal
 from app.models.business_hours import BusinessHours
 from app.models.cash_shift import CashMovement, CashShift
 from app.models.client import Client
+from app.models.coupon import Coupon
 from app.models.delay_rule import DelayRule
 from app.models.delivery_driver import DeliveryDriver, DeliveryTrip
 from app.models.driver_review import DriverReview
@@ -30,6 +31,7 @@ __all__ = [
     "CashShift",
     "Category",
     "Client",
+    "Coupon",
     "DelayRule",
     "DeliveryDriver",
     "DeliveryTrip",

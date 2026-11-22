@@ -2,7 +2,10 @@ import { api } from './api';
 import type {
   BestSellingDayResponse,
   BusinessGoalsResponse,
+  CopilotActionExecutionResponse,
+  CopilotAnswerResponse,
   DashboardKPIsResponse,
+  PredictionsResponse,
   StatsParams,
   StrategicInsightResponse,
   TopProduct,
@@ -69,3 +72,34 @@ export async function fetchStrategicInsight(params: StatsParams = {}): Promise<S
   });
   return data;
 }
+
+export async function fetchPredictions(weeks: number = 8): Promise<PredictionsResponse> {
+  const { data } = await api.get<PredictionsResponse>('/stats/predictions', {
+    params: { weeks },
+  });
+  return data;
+}
+
+export async function askCopilot(
+  question: string,
+  history?: { role: string; content: string }[]
+): Promise<CopilotAnswerResponse> {
+  const { data } = await api.post<CopilotAnswerResponse>('/stats/copilot/ask', {
+    question,
+    conversation_history: history,
+  });
+  return data;
+}
+
+export async function executeCopilotAction(
+  actionType: string,
+  payload: Record<string, unknown>
+): Promise<CopilotActionExecutionResponse> {
+  const { data } = await api.post<CopilotActionExecutionResponse>('/stats/copilot/execute-action', {
+    action_type: actionType,
+    payload,
+  });
+  return data;
+}
+
+

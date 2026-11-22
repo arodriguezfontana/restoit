@@ -107,7 +107,7 @@ export function CheckoutForm({
   onSubmitSuccess: (order: WebOrderCreated, form: CheckoutFormData) => void;
   onRequestAuth: (mode: CustomerAuthMode) => void;
 }) {
-  const { items } = useCart();
+  const { items, appliedCoupon } = useCart();
   const { user, isCustomer } = useAuth();
   const profile = isCustomer ? user : null;
 
@@ -146,6 +146,7 @@ export function CheckoutForm({
         notes: notes.trim() || null,
         items: items.map(toWebOrderItem),
         payment_method: paymentMethod,
+        coupon_code: appliedCoupon ? appliedCoupon.code : null,
       });
       onSubmitSuccess(order, form);
       // Con MercadoPago el pedido ya quedó registrado (pendiente de pago): ahora se paga en su checkout.

@@ -157,7 +157,6 @@ describe('IngredientesView', () => {
   });
 
   it('elimina un ingrediente después de confirmar y avisa si está en uso', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     service.deleteIngredient
       .mockResolvedValueOnce()
       .mockRejectedValueOnce({ statusCode: 409, message: 'Forma parte de la receta de: Pizza Muzzarella.' });
@@ -166,19 +165,23 @@ describe('IngredientesView', () => {
     await screen.findByRole('cell', { name: 'Huevo' });
 
     await user.click(screen.getByRole('button', { name: 'Eliminar Huevo' }));
+    expect(screen.getByText('¿Eliminar?')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Sí' }));
     expect(service.deleteIngredient).toHaveBeenCalledWith(3);
 
     await user.click(screen.getByRole('button', { name: 'Eliminar Muzzarella' }));
+    await user.click(screen.getByRole('button', { name: 'Sí' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Forma parte de la receta de: Pizza Muzzarella.');
   });
 
   it('no elimina si se cancela la confirmación', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
     render(<IngredientesView />);
     const user = userEvent.setup();
     await screen.findByRole('cell', { name: 'Huevo' });
 
     await user.click(screen.getByRole('button', { name: 'Eliminar Huevo' }));
+    expect(screen.getByText('¿Eliminar?')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'No' }));
 
     expect(service.deleteIngredient).not.toHaveBeenCalled();
   });

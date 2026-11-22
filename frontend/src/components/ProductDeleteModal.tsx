@@ -49,10 +49,24 @@ export function ProductDeleteModal({
             <p className="text-sm text-gray-700">
               El producto <strong>{product.name}</strong> pertenece a las siguientes promociones:
             </p>
-            <ul className="list-disc list-inside bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-900 space-y-1">
+            <ul
+              style={{
+                borderColor: 'var(--primary-border, #e4e4e7)',
+                backgroundColor: 'var(--primary-light, #f4f4f5)',
+              }}
+              className="border rounded-xl p-3 text-sm space-y-1.5"
+            >
               {promotions.map((promo) => (
-                <li key={promo.id} className="font-semibold">
-                  {promo.name}
+                <li
+                  key={promo.id}
+                  className="font-bold flex items-center gap-2"
+                  style={{ color: 'var(--primary-text, #18181b)' }}
+                >
+                  <span
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{ backgroundColor: 'var(--primary-color, #18181b)' }}
+                  />
+                  <span>{promo.name}</span>
                 </li>
               ))}
             </ul>

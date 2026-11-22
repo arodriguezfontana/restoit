@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { CashPinSection } from '@/components/configuracion/CashPinSection';
+import { CouponsSection } from '@/components/configuracion/CouponsSection';
 import { DelaySettingsSection } from '@/components/configuracion/DelaySettingsSection';
 import { LoginBackgroundSection } from '@/components/configuracion/LoginBackgroundSection';
 import { LogoSection } from '@/components/configuracion/LogoSection';
@@ -18,11 +19,12 @@ interface ConfiguracionWebViewProps {
   onConfigUpdated?: (config: StoreConfig) => void;
 }
 
-type ConfigTab = 'local' | 'apariencia' | 'pagos' | 'demoras' | 'seguridad';
+type ConfigTab = 'local' | 'apariencia' | 'pagos' | 'demoras' | 'cupones' | 'seguridad';
 
 const TABS: { id: ConfigTab; label: string; description: string }[] = [
   { id: 'local', label: 'Local', description: 'Nombre, contacto y logo.' },
   { id: 'demoras', label: 'Demoras', description: 'Cómo se calcula la demora de los pedidos.' },
+  { id: 'cupones', label: 'Cupones', description: 'Cupones de descuento exclusivos para la web.' },
   { id: 'pagos', label: 'Medios de pago', description: 'Cómo cobra el local.' },
   { id: 'apariencia', label: 'Apariencia', description: 'Colores y fondos del panel y del login.' },
   { id: 'seguridad', label: 'Seguridad', description: 'PIN de la caja.' },
@@ -45,8 +47,8 @@ export function ConfiguracionWebView({ onConfigUpdated }: ConfiguracionWebViewPr
     return <PanelNote>Cargando configuración...</PanelNote>;
   }
 
-  // Las demoras se guardan al instante, por eso no forman parte del formulario ni muestran "Guardar cambios".
-  const isFormTab = activeTab !== 'demoras';
+  // Las demoras y los cupones se gestionan al instante, por eso no forman parte del formulario ni muestran "Guardar cambios".
+  const isFormTab = activeTab !== 'demoras' && activeTab !== 'cupones';
   const activeDescription = TABS.find((tab) => tab.id === activeTab)?.description;
 
   return (
@@ -79,6 +81,7 @@ export function ConfiguracionWebView({ onConfigUpdated }: ConfiguracionWebViewPr
 
       <div id="config-tabpanel" role="tabpanel" aria-labelledby={`config-tab-${activeTab}`}>
         {activeTab === 'demoras' && <DelaySettingsSection />}
+        {activeTab === 'cupones' && <CouponsSection />}
 
         {isFormTab && (
           <form onSubmit={form.handleSubmit} className="space-y-6">

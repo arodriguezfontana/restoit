@@ -245,10 +245,19 @@ function PinModalDialog({
         {errorMsg && (
           <div
             role="alert"
+            style={
+              !isBlocked
+                ? {
+                    backgroundColor: 'var(--primary-light, #f4f4f5)',
+                    borderColor: 'var(--primary-border, #e4e4e7)',
+                    color: 'var(--primary-text, #18181b)',
+                  }
+                : undefined
+            }
             className={`w-full text-xs font-medium p-3 rounded-xl mb-4 border ${
               isBlocked
                 ? 'bg-red-50 text-red-700 border-red-200'
-                : 'bg-amber-50 text-amber-800 border-amber-200'
+                : ''
             }`}
           >
             <p>{errorMsg}</p>

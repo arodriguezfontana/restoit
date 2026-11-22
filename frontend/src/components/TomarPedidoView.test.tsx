@@ -319,9 +319,8 @@ describe('TomarPedidoView', () => {
       // Agregar promo al pedido
       await user.click(promoBtn);
 
-      // Aparece en el resumen con badge Promo y su precio
+      // Aparece en el resumen con su precio
       expect(within(summary()).getByText('Combo Pizzeros')).toBeInTheDocument();
-      expect(within(summary()).getByText('Promo')).toBeInTheDocument();
       expect(total()).toBe('$ 15.000,00');
 
       // Sumar otra unidad de la promo

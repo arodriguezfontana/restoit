@@ -24,6 +24,7 @@ export function CategoriasView() {
   const { categories = [], products = [] } = data ?? {};
   const [actionError, setActionError] = useState<string | null>(null);
   const [categoryForm, setCategoryForm] = useState<CategoryForm>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const { message: toastMessage, show: showToast } = useToast();
 
   const handleSave = async (payload: CategoryPayload) => {
@@ -36,21 +37,15 @@ export function CategoriasView() {
   };
 
   const handleDelete = async (category: AdminCategory) => {
-    const count = category.products.length;
-    const warning =
-      count === 0
-        ? ''
-        : count === 1
-          ? ' Su producto quedará sin categoría y no se mostrará en el menú.'
-          : ` Sus ${count} productos quedarán sin categoría y no se mostrarán en el menú.`;
-    if (!window.confirm(`¿Eliminar la categoría "${category.name}"?${warning}`)) return;
     setActionError(null);
     try {
       await deleteCategory(category.id);
+      setDeletingId(null);
       reload();
       showToast(`Se eliminó la categoría ${category.name}.`);
     } catch (err) {
       setActionError(getErrorMessage(err, 'No se pudo eliminar la categoría.'));
+      setDeletingId(null);
     }
   };
 
@@ -142,22 +137,44 @@ export function CategoriasView() {
                       )}
                     </td>
                     <td className="py-3 px-5 text-right whitespace-nowrap space-x-2">
-                      <button
-                        type="button"
-                        onClick={() => setCategoryForm({ category })}
-                        aria-label={`Editar ${category.name}`}
-                        className="text-xs font-semibold rounded-lg px-3 py-1.5 text-gray-700 hover:bg-gray-200"
-                      >
-                        Editar
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(category)}
-                        aria-label={`Eliminar ${category.name}`}
-                        className="text-xs font-semibold rounded-lg px-3 py-1.5 text-red-600 hover:bg-red-50"
-                      >
-                        Eliminar
-                      </button>
+                      {deletingId === category.id ? (
+                        <span className="inline-flex items-center gap-1.5 text-xs">
+                          <span className="text-red-600 font-semibold text-xs">¿Eliminar?</span>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(category)}
+                            className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold text-xs transition"
+                          >
+                            Sí
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeletingId(null)}
+                            className="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-semibold text-xs transition"
+                          >
+                            No
+                          </button>
+                        </span>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setCategoryForm({ category })}
+                            aria-label={`Editar ${category.name}`}
+                            className="text-xs font-semibold rounded-lg px-3 py-1.5 text-gray-700 hover:bg-gray-200"
+                          >
+                            Editar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeletingId(category.id)}
+                            aria-label={`Eliminar ${category.name}`}
+                            className="text-xs font-semibold rounded-lg px-3 py-1.5 text-red-600 hover:bg-red-50"
+                          >
+                            Eliminar
+                          </button>
+                        </>
+                      )}
                     </td>
                   </tr>
                 ))}

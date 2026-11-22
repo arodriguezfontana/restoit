@@ -78,6 +78,7 @@ export interface WebOrderPayload {
   notes: string | null;
   items: WebOrderItemPayload[];
   payment_method: WebPaymentMethod;
+  coupon_code?: string | null;
 }
 
 /** Pedido presencial: el personal registra además cómo paga el cliente. */

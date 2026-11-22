@@ -64,7 +64,6 @@ const NAV_GROUPS: { title: string; items: { key: ViewKey; label: string }[] }[] 
     title: 'Reportes',
     items: [
       { key: 'estadisticas', label: 'Estadísticas' },
-      { key: 'reporte-ingredientes', label: 'Reporte de ingredientes' },
     ],
   },
   {

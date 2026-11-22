@@ -4,6 +4,8 @@ import { MAX_QUANTITY_PER_ITEM } from '@/types/order';
 import type { CartItem, OrderItemModification, Product } from '@/types/order';
 import type { Promotion } from '@/types/promotion';
 import { CartContext } from '@/context/cart-context';
+import type { AppliedCoupon } from '@/context/cart-context';
+import { validateCoupon } from '@/services/couponService';
 import { basePriceOf, isPlainLineOf, lineMatches, withMoreUnits } from '@/utils/cart';
 import { additionsCost } from '@/utils/modifications';
 import { formatPizzaHalfName } from '@/utils/pizzaHalf';
@@ -119,11 +121,40 @@ export function CartProvider({ children }: Readonly<{ children: ReactNode }>) {
     setItems((prev) => splitOneUnit(prev, lineId));
   }, []);
 
-  const clearCart = useCallback(() => {
-    setItems([]);
+  const [appliedCoupon, setAppliedCoupon] = useState<AppliedCoupon | null>(null);
+
+  const applyCoupon = useCallback(async (code: string) => {
+    const cleanCode = code.trim().toUpperCase();
+    if (!cleanCode) {
+      return { success: false, message: 'Ingresá un código de cupón' };
+    }
+    try {
+      const res = await validateCoupon(cleanCode);
+      if (res.valid) {
+        setAppliedCoupon({
+          code: res.code,
+          discount_percentage: res.discount_percentage,
+        });
+        return { success: true, message: `¡Cupón ${res.code} aplicado con éxito! (${res.discount_percentage}% OFF)` };
+      }
+      return { success: false, message: res.message || 'El cupón no es válido o no está activo.' };
+    } catch {
+      return { success: false, message: 'No se pudo validar el cupón en este momento.' };
+    }
   }, []);
 
-  const total = items.reduce((sum, item) => sum + (item.unit_price ?? item.product.price) * item.quantity, 0);
+  const removeCoupon = useCallback(() => {
+    setAppliedCoupon(null);
+  }, []);
+
+  const clearCart = useCallback(() => {
+    setItems([]);
+    setAppliedCoupon(null);
+  }, []);
+
+  const subtotal = items.reduce((sum, item) => sum + (item.unit_price ?? item.product.price) * item.quantity, 0);
+  const discountAmount = appliedCoupon ? Math.round((subtotal * appliedCoupon.discount_percentage) / 100) : 0;
+  const total = Math.max(0, subtotal - discountAmount);
   const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
 
   const value = useMemo(
@@ -136,10 +167,31 @@ export function CartProvider({ children }: Readonly<{ children: ReactNode }>) {
       updateItemModifications,
       splitItem,
       clearCart,
+      subtotal,
+      discountAmount,
       total,
       itemCount,
+      appliedCoupon,
+      applyCoupon,
+      removeCoupon,
     }),
-    [items, addItem, addPromotion, removeItem, updateQuantity, updateItemModifications, splitItem, clearCart, total, itemCount]
+    [
+      items,
+      addItem,
+      addPromotion,
+      removeItem,
+      updateQuantity,
+      updateItemModifications,
+      splitItem,
+      clearCart,
+      subtotal,
+      discountAmount,
+      total,
+      itemCount,
+      appliedCoupon,
+      applyCoupon,
+      removeCoupon,
+    ]
   );
 
   return (

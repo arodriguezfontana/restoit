@@ -48,13 +48,13 @@ export function ProductsTable({ products, onEdit, onEditRecipe, onDelete }: Prod
                           <span
                             key={restriction}
                             style={{
-                              backgroundColor: 'var(--primary-light, #f4f4f5)',
-                              borderColor: 'var(--primary-border, #e4e4e7)',
-                              color: 'var(--primary-text, #18181b)',
+                              backgroundColor: '#ffffff',
+                              borderColor: 'var(--primary-color, #18181b)',
+                              color: 'var(--primary-color, #18181b)',
                             }}
                             className="rounded-full border text-[10px] font-semibold px-2 py-0.5"
                           >
-                            {restriction}
+                            {restriction.charAt(0).toUpperCase() + restriction.slice(1)}
                           </span>
                         ))}
                       </div>

@@ -49,7 +49,8 @@ export function AiAdviceSection({
             onClick={handleRequestAi}
             disabled={aiLoading}
             aria-label={aiLoading ? 'Analizando...' : 'Actualizar consejos'}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition shadow-xs bg-sky-600 hover:bg-sky-700 text-white disabled:opacity-50 cursor-pointer"
+            style={{ backgroundColor: 'var(--primary-color, #18181b)' }}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition shadow-xs text-white hover:opacity-90 disabled:opacity-50 cursor-pointer"
           >
             {aiLoading ? (
               <>
@@ -117,11 +118,11 @@ export function AiAdviceSection({
             )}
 
             {/* Diagnóstico General */}
-            <div className="bg-zinc-900 text-white rounded-xl p-4 shadow-2xs">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 block mb-1">
+            <div className="bg-orange-50/70 border border-orange-200/70 rounded-xl p-4">
+              <span className="text-xs font-bold uppercase tracking-wide text-orange-900 block mb-1">
                 Diagnóstico
               </span>
-              <p className="text-xs leading-relaxed text-gray-100">{aiData.summary}</p>
+              <p className="text-xs leading-relaxed text-orange-950 font-medium">{aiData.summary}</p>
             </div>
 
             {/* Debilidades y Oportunidades: 3 puntos cada uno */}
@@ -197,7 +198,8 @@ export function AiAdviceSection({
             type="button"
             onClick={handleRequestAi}
             aria-label="Analizar con IA"
-            className="px-3.5 py-1.5 bg-black hover:bg-gray-800 text-white rounded-xl text-xs font-semibold transition shrink-0 cursor-pointer flex items-center gap-1.5 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black"
+            style={{ backgroundColor: 'var(--primary-color, #18181b)' }}
+            className="px-3.5 py-1.5 text-white rounded-xl text-xs font-semibold hover:opacity-90 transition shrink-0 cursor-pointer flex items-center gap-1.5 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black"
           >
             <SparklesIcon className="w-3.5 h-3.5" aria-hidden="true" />
             <span>Analizar con IA</span>

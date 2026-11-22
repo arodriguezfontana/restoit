@@ -82,6 +82,7 @@ describe('ConfiguracionWebView', () => {
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
       'Local',
       'Demoras',
+      'Cupones',
       'Medios de pago',
       'Apariencia',
       'Seguridad',
@@ -90,6 +91,10 @@ describe('ConfiguracionWebView', () => {
 
     await userEvent.click(screen.getByRole('tab', { name: 'Demoras' }));
     expect(await screen.findByText('Demora de los pedidos')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Guardar cambios' })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Cupones' }));
+    expect(await screen.findByText('Crear nuevo cupón de descuento')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Guardar cambios' })).not.toBeInTheDocument();
   });
 

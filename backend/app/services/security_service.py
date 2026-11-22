@@ -14,7 +14,7 @@ from app.services.store_config_service import get_or_create_store_config
 PIN_TYPES = ("admin", "cash")
 MAX_FAILED_ATTEMPTS = 3
 LOCKOUT_DURATION = timedelta(minutes=5)
-PRIVILEGED_TOKEN_DURATION = timedelta(minutes=5)
+PRIVILEGED_TOKEN_DURATION = timedelta(minutes=15)
 
 
 def _ensure_utc(dt: datetime | None) -> datetime | None:

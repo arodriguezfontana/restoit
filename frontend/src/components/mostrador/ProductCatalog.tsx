@@ -96,13 +96,13 @@ function ProductTile({ product, quantity, onAdd }: { product: Product; quantity:
             <span
               key={restriction}
               style={{
-                backgroundColor: 'var(--primary-light, #f4f4f5)',
-                borderColor: 'var(--primary-border, #e4e4e7)',
-                color: 'var(--primary-text, #18181b)',
+                backgroundColor: '#ffffff',
+                borderColor: 'var(--primary-color, #18181b)',
+                color: 'var(--primary-color, #18181b)',
               }}
               className="rounded-full border text-[9px] font-semibold px-1.5 py-0.2"
             >
-              {restriction}
+              {restriction.charAt(0).toUpperCase() + restriction.slice(1)}
             </span>
           ))}
         </span>
