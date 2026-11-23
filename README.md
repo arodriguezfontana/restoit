@@ -24,6 +24,9 @@ Plataforma de gestión de locales gastronomicos unificada e inteligente que auto
 - Entregas:
     * [PoC](https://github.com/arodriguezfontana/tip/wiki/PoC)
     * [Entrega 1](https://github.com/arodriguezfontana/tip/wiki/Entrega-1)
+    * [Entrega 2](https://github.com/arodriguezfontana/tip/wiki/Entrega-2)
+    * [Entrega 3](https://github.com/arodriguezfontana/tip/wiki/Entrega-3)
+    * [Entrega 4](https://github.com/arodriguezfontana/tip/wiki/Entrega-4)
 - Demo:
 
 ### Elevator Pitch
