@@ -268,6 +268,19 @@ def _attach_open_shift(db: Session, order: Order) -> None:
         order.cash_shift_id = shift.id
 
 
+def _apply_coupon_discount(db: Session, order: Order, coupon_code: str | None) -> None:
+    if not coupon_code:
+        return
+    coupon_res = coupon_service.validate_web_coupon(db, coupon_code)
+    if coupon_res.valid:
+        discount_amount = round(order.total_amount * Decimal(str(coupon_res.discount_percentage)) / Decimal("100"), 2)
+        order.total_amount = max(Decimal("0"), order.total_amount - discount_amount)
+        coupon_note = f"[Cupón aplicado: {coupon_res.code} ({coupon_res.discount_percentage}% OFF - Ahorro: ${discount_amount:,.2f})]"
+        order.notes = f"{order.notes}\n{coupon_note}".strip() if order.notes else coupon_note
+    else:
+        raise BusinessRuleError(coupon_res.message or f"El cupón '{coupon_code}' no es válido.")
+
+
 def create_web_order(
     db: Session,
     request: OrderRequest,
@@ -292,15 +305,7 @@ def create_web_order(
     order.is_paid = False
     _attach_open_shift(db, order)
 
-    if coupon_code:
-        coupon_res = coupon_service.validate_web_coupon(db, coupon_code)
-        if coupon_res.valid:
-            discount_amount = round(order.total_amount * Decimal(str(coupon_res.discount_percentage)) / Decimal("100"), 2)
-            order.total_amount = max(Decimal("0"), order.total_amount - discount_amount)
-            coupon_note = f"[Cupón aplicado: {coupon_res.code} ({coupon_res.discount_percentage}% OFF - Ahorro: ${discount_amount:,.2f})]"
-            order.notes = f"{order.notes}\n{coupon_note}".strip() if order.notes else coupon_note
-        else:
-            raise BusinessRuleError(coupon_res.message or f"El cupón '{coupon_code}' no es válido.")
+    _apply_coupon_discount(db, order, coupon_code)
 
     return _save(db, order)
 
@@ -335,6 +340,7 @@ def create_bot_order(
     chat_id: str | None,
     scheduled_for: datetime | None,
     payment_method: str | None = None,
+    coupon_code: str | None = None,
 ) -> Order:
     """Pedido confirmado por el cliente en el chat del bot (de cualquier canal): como los de la web, entra directamente
     'Confirmado' (en preparación) con la demora que corresponda, sin pasar por una aceptación del local."""
@@ -348,6 +354,7 @@ def create_bot_order(
     order.payment_method = payment_method
     order.is_paid = False
     _attach_open_shift(db, order)
+    _apply_coupon_discount(db, order, coupon_code)
     order = _save(db, order)
     # Queda en la agenda (nombre, teléfono y dirección de envío) para reconocerlo en su próximo pedido.
     _register_client(db, request)
