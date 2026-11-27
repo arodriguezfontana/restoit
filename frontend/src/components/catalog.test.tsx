@@ -157,6 +157,42 @@ describe('ProductosView', () => {
     );
   });
 
+  it('crea un producto con variantes: cada una con su precio', async () => {
+    catalog.createProduct.mockResolvedValue(makeAdminProduct({ id: 21, name: 'Fugazzeta', price: 20000 }));
+    render(<ProductosView />);
+    const user = userEvent.setup();
+    await screen.findByText('Pizza Muzzarella', { selector: 'p' });
+
+    await user.click(screen.getByRole('button', { name: '+ Crear producto' }));
+    const dialog = screen.getByRole('dialog', { name: 'Crear producto' });
+    await user.type(within(dialog).getByLabelText('Nombre *'), 'Fugazzeta');
+    await user.type(within(dialog).getByLabelText('Descripción *'), 'Cebolla.');
+    await user.selectOptions(within(dialog).getByLabelText('Categoría *'), 'Pizzas');
+    await user.click(within(dialog).getByRole('button', { name: '+ Agregar variante' }));
+    await user.click(within(dialog).getByRole('button', { name: '+ Agregar variante' }));
+    expect(within(dialog).queryByRole('spinbutton', { name: 'Precio *' })).not.toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Crear producto' }));
+    expect(within(dialog).getByText('Ingresá el nombre de cada variante.')).toBeInTheDocument();
+
+    await user.type(within(dialog).getByLabelText('Nombre de la variante 1'), 'Grande');
+    await user.type(within(dialog).getByLabelText('Precio de la variante 1'), '24000');
+    await user.type(within(dialog).getByLabelText('Nombre de la variante 2'), 'Chica');
+    await user.type(within(dialog).getByLabelText('Precio de la variante 2'), '20000');
+    await user.click(within(dialog).getByRole('button', { name: 'Crear producto' }));
+
+    expect(catalog.createProduct).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Fugazzeta',
+        variants: [
+          { name: 'Grande', price: 24000 },
+          { name: 'Chica', price: 20000 },
+        ],
+      })
+    );
+    expect(catalog.createProduct.mock.calls[0][0]).not.toHaveProperty('price');
+  });
+
   it('crea un producto con imagen', async () => {
     const created = makeAdminProduct({ id: 20, name: 'Fugazzeta', description: 'Cebolla.', price: 9500 });
     catalog.createProduct.mockResolvedValue(created);
@@ -181,6 +217,7 @@ describe('ProductosView', () => {
       name: 'Fugazzeta',
       description: 'Cebolla.',
       price: 9500,
+      variants: [],
       category_id: 1,
       is_active: true,
       dietary_restrictions: ['vegetariano', 'sin TACC'],
@@ -261,6 +298,7 @@ describe('ProductosView', () => {
       name: 'Pizza Muzzarella',
       description: 'Salsa de tomate y muzzarella.',
       price: 9000,
+      variants: [],
       category_id: 2,
       is_active: false,
       dietary_restrictions: [],

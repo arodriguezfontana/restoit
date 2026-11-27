@@ -61,7 +61,7 @@ def obtener_promociones_actuales() -> str:
             return "No hay promociones vigentes en este momento."
         lines = []
         for p in promos:
-            items_str = ", ".join(f"{it.quantity}x {it.product.name}" for it in p.items if it.product)
+            items_str = ", ".join(f"{it.quantity}x {it.display_name}" for it in p.items if it.product)
             desc = f": {p.description}" if p.description else ""
             lines.append(f"- {p.name} (${p.price:,.2f}) [{items_str}]{desc}")
         return "\n".join(lines)

@@ -6,6 +6,13 @@ import { formatCurrency } from '@/utils/currency';
 import { formatPizzaHalfName } from '@/utils/pizzaHalf';
 import { INPUT_FULL_CLASS } from '@/styles/forms';
 import { PizzaIcon } from '@/components/Icons';
+import { sharedVariants, variantNamed, withVariant } from '@/utils/variants';
+
+/** El gusto en la variante elegida (con su precio), o tal cual si no tiene variantes. */
+function inVariant(pizza: Product, variantName: string | undefined): Product {
+  const variant = variantNamed(pizza, variantName);
+  return variant ? withVariant(pizza, variant) : pizza;
+}
 
 interface PizzaMitadYMitadModalProps {
   pizzas: Product[];
@@ -18,6 +25,7 @@ export function PizzaMitadYMitadModal({ pizzas, onClose }: PizzaMitadYMitadModal
   const [sabor1Id, setSabor1Id] = useState<number>(pizzas[0]?.id ?? 0);
   const [sabor2Id, setSabor2Id] = useState<number>(pizzas[1]?.id ?? pizzas[0]?.id ?? 0);
   const [quantity, setQuantity] = useState(1);
+  const [chosenVariant, setChosenVariant] = useState<string | undefined>(undefined);
 
   const pizza1 = pizzas.find((p) => p.id === sabor1Id) ?? pizzas[0];
   const pizza2 = pizzas.find((p) => p.id === sabor2Id) ?? pizzas[1] ?? pizzas[0];
@@ -32,12 +40,21 @@ export function PizzaMitadYMitadModal({ pizzas, onClose }: PizzaMitadYMitadModal
 
   if (!pizza1 || !pizza2) return null;
 
-  const unitPrice = Math.max(pizza1.price, pizza2.price);
+  // Los dos gustos se piden en la misma variante (ej. los dos Grande): solo se ofrecen las que tienen ambos.
+  const variants = sharedVariants([pizza1, pizza2]);
+  const needsVariant = Boolean(pizza1.variants?.length || pizza2.variants?.length);
+  const variantName = variants.find((v) => v.name === chosenVariant)?.name ?? variants[0]?.name;
+  const half1 = inVariant(pizza1, variantName);
+  const half2 = inVariant(pizza2, variantName);
+  const cannotCombine = needsVariant && variants.length === 0;
+
+  const unitPrice = Math.max(half1.price, half2.price);
   const totalPrice = unitPrice * quantity;
-  const unifiedName = formatPizzaHalfName(pizza1.name, pizza2.name);
+  const unifiedName = formatPizzaHalfName(pizza1.name, pizza2.name, variantName);
 
   const handleAddToCart = () => {
-    addItem(pizza1, quantity, pizza2, unifiedName);
+    if (cannotCombine) return;
+    addItem(half1, quantity, half2, unifiedName);
     onClose();
   };
 
@@ -70,7 +87,7 @@ export function PizzaMitadYMitadModal({ pizzas, onClose }: PizzaMitadYMitadModal
               Armar pizza mitad y mitad
             </h2>
             <p className="text-xs text-gray-500">
-              Elegí dos sabores para combinar en una misma pizza grande.
+              Elegí dos sabores para combinar en una misma pizza.
             </p>
           </div>
         </div>
@@ -111,6 +128,36 @@ export function PizzaMitadYMitadModal({ pizzas, onClose }: PizzaMitadYMitadModal
               ))}
             </select>
           </div>
+
+          {variants.length > 0 && (
+            <div>
+              <span className="block text-sm font-medium text-gray-700 mb-1">Tamaño</span>
+              <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Tamaño de la pizza">
+                {variants.map((variant) => (
+                  <button
+                    key={variant.name}
+                    type="button"
+                    role="radio"
+                    aria-checked={variant.name === variantName}
+                    onClick={() => setChosenVariant(variant.name)}
+                    className={`rounded-xl border px-3 py-1.5 text-sm font-semibold transition ${
+                      variant.name === variantName
+                        ? 'border-black bg-gray-900 text-white'
+                        : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    {variant.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {cannotCombine && (
+            <p role="alert" className="rounded-xl bg-amber-50 text-amber-800 px-3 py-2 text-sm">
+              Estos dos gustos no vienen en el mismo tamaño: elegí otra combinación.
+            </p>
+          )}
 
           {/* Resumen del ítem armado */}
           <div className="rounded-xl bg-gray-50 border border-gray-200 p-3.5 space-y-2">
@@ -165,8 +212,9 @@ export function PizzaMitadYMitadModal({ pizzas, onClose }: PizzaMitadYMitadModal
             <button
               type="button"
               onClick={handleAddToCart}
+              disabled={cannotCombine}
               style={{ backgroundColor: 'var(--primary-color, #18181b)' }}
-              className="flex-1 text-white rounded-xl py-2.5 px-4 font-semibold hover:opacity-90 transition shadow-xs"
+              className="flex-1 text-white rounded-xl py-2.5 px-4 font-semibold hover:opacity-90 transition shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Agregar al carrito
             </button>

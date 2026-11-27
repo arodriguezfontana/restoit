@@ -23,7 +23,10 @@ def telegram(monkeypatch, canal):
 
     def responder(request: httpx.Request) -> httpx.Response:
         estado["requests"].append(request)
-        return httpx.Response(estado["status"], json={"ok": estado["status"] == 200})
+        cuerpo = {"ok": estado["status"] == 200}
+        if "description" in estado:
+            cuerpo["description"] = estado["description"]
+        return httpx.Response(estado["status"], json=cuerpo)
 
     monkeypatch.setattr(canal, "_cliente", lambda: httpx.AsyncClient(transport=httpx.MockTransport(responder)))
     return estado
@@ -43,6 +46,7 @@ def test_un_error_de_telegram_no_rompe_el_flujo(telegram, canal, caplog):
     asyncio.run(canal.enviar_mensaje("12345", "Hola"))
 
     assert "Error al enviar mensaje a Telegram" in caplog.text
+    assert settings.TELEGRAM_TOKEN not in caplog.text
 
 
 def test_un_chat_no_numerico_no_se_envia(telegram, canal, caplog):
@@ -101,3 +105,40 @@ def test_enviar_mensaje_sin_canal_o_chat_no_envia(telegram, caplog):
     asyncio.run(enviar_mensaje("telegram", None, "Hola"))
 
     assert telegram["requests"] == []
+
+
+def test_registra_el_webhook_en_la_url_publica(telegram, canal, monkeypatch, caplog):
+    monkeypatch.setattr(settings, "PUBLIC_URL", "back.example.com/")
+    caplog.set_level("INFO")
+
+    asyncio.run(canal.registrar_webhook())
+
+    [request] = telegram["requests"]
+    assert request.url.path.endswith("/setWebhook")
+    assert json.loads(request.content)["url"] == f"https://back.example.com{settings.API_V1_STR}/telegram/webhook"
+    assert "Webhook de Telegram registrado" in caplog.text
+
+
+def test_si_telegram_rechaza_el_webhook_se_registra_su_motivo_sin_el_token(telegram, canal, monkeypatch, caplog):
+    monkeypatch.setattr(settings, "PUBLIC_URL", "http://back.example.com")
+    telegram["status"] = 400
+    telegram["description"] = "Bad Request: bad webhook: An HTTPS URL must be provided for webhook"
+
+    asyncio.run(canal.registrar_webhook())
+
+    assert "An HTTPS URL must be provided" in caplog.text
+    assert "http://back.example.com" in caplog.text
+    assert settings.TELEGRAM_TOKEN not in caplog.text
+
+
+def test_un_error_de_conexion_no_muestra_el_token(canal, monkeypatch, caplog):
+    def fallar(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError(f"no se pudo conectar a {request.url}", request=request)
+
+    monkeypatch.setattr(canal, "_cliente", lambda: httpx.AsyncClient(transport=httpx.MockTransport(fallar)))
+
+    asyncio.run(canal.enviar_mensaje("12345", "Hola"))
+
+    assert "ConnectError" in caplog.text
+    assert "<TELEGRAM_TOKEN>" in caplog.text
+    assert settings.TELEGRAM_TOKEN not in caplog.text

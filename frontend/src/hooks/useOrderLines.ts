@@ -3,12 +3,13 @@ import { MAX_QUANTITY_PER_ITEM } from '@/types/order';
 import type { CartItem, Product } from '@/types/order';
 import type { Promotion } from '@/types/promotion';
 
-const productLineKey = (productId: number) => `prod-${productId}`;
+const productLineKey = (product: Product) =>
+  product.variant_name ? `prod-${product.id}-${product.variant_name.toLowerCase()}` : `prod-${product.id}`;
 const promotionLineKey = (promotionId: number) => `promo-${promotionId}`;
 
-/** Clave de la línea del pedido: un producto o una promoción (una sola línea de cada uno). */
+/** Clave de la línea del pedido: un producto (en cada variante) o una promoción (una sola línea de cada uno). */
 export const orderLineKey = (line: CartItem): string =>
-  line.promotion ? promotionLineKey(line.promotion.id) : productLineKey(line.product.id);
+  line.promotion ? promotionLineKey(line.promotion.id) : productLineKey(line.product);
 
 /** Producto que representa a una promoción en el pedido. */
 function promotionAsProduct(promotion: Promotion): Product {
@@ -37,7 +38,7 @@ export function useOrderLines() {
 
   const addProduct = (product: Product) =>
     setLines((prev) =>
-      addUnit(prev, (line) => !line.promotion && line.product.id === product.id, {
+      addUnit(prev, (line) => !line.promotion && orderLineKey(line) === productLineKey(product), {
         product,
         quantity: 1,
         unit_price: product.price,

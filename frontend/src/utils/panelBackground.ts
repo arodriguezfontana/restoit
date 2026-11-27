@@ -26,15 +26,29 @@ const VEIL = 'linear-gradient(rgb(15 23 42 / 0.55), rgb(15 23 42 / 0.55))';
 export function panelBackground(
   config: Pick<StoreConfig, 'panel_bg' | 'panel_bg_image' | 'panel_bg_color'> | null
 ): PanelBackground | null {
-  const choice = config?.panel_bg;
+  return resolveBackground(config?.panel_bg, config?.panel_bg_image, config?.panel_bg_color);
+}
+
+/** Fondo de la página pública /menu según la configuración del local; null = fondo liso por defecto. */
+export function menuBackground(
+  config: Pick<StoreConfig, 'menu_bg' | 'menu_bg_image' | 'menu_bg_color'> | null
+): PanelBackground | null {
+  return resolveBackground(config?.menu_bg, config?.menu_bg_image, config?.menu_bg_color);
+}
+
+function resolveBackground(
+  choice: PanelBgOption | undefined,
+  customImage: string | null | undefined,
+  customColor: string | null | undefined
+): PanelBackground | null {
   if (!choice || choice === 'none') return null;
   // Un color se pinta como un degradado de un solo tono: así todos los fondos usan la misma propiedad.
   if (choice === 'color') {
-    const color = config?.panel_bg_color;
+    const color = customColor;
     return color ? { css: `linear-gradient(${color}, ${color})`, blurred: false } : null;
   }
   const image =
-    choice === 'custom' ? config?.panel_bg_image || null : (PANEL_BG_PRESETS.find((preset) => preset.id === choice)?.image ?? null);
+    choice === 'custom' ? customImage || null : (PANEL_BG_PRESETS.find((preset) => preset.id === choice)?.image ?? null);
   // Velo oscuro sobre la foto: todo texto de las secciones va sobre una tarjeta blanca.
   return image ? { css: `${VEIL}, url("${image}")`, blurred: true } : null;
 }

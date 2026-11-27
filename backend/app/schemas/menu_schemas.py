@@ -16,6 +16,15 @@ class CategoryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class VariantResponse(BaseModel):
+    name: str
+    price: float
+
+    @classmethod
+    def of(cls, product: Product) -> list["VariantResponse"]:
+        return [cls(name=variant.name, price=float(variant.price)) for variant in product.variants]
+
+
 class IngredientExtraResponse(BaseModel):
     id: int
     name: str
@@ -34,6 +43,8 @@ class ProductResponse(BaseModel):
     image_url: str | None = Field(None, description="Ruta de la imagen relativa a la API, si tiene.")
     recipe_ingredients: list[str] = Field(default_factory=list)
     allowed_extras: list[IngredientExtraResponse] = Field(default_factory=list)
+    # Opciones con su precio (ej. Grande y Chica): si hay, se pide eligiendo una. `price` es el de la más barata.
+    variants: list[VariantResponse] = Field(default_factory=list)
 
     @classmethod
     def from_model(cls, product: Product) -> "ProductResponse":
@@ -42,6 +53,7 @@ class ProductResponse(BaseModel):
             name=product.name,
             description=product.description,
             price=float(product.price),
+            variants=VariantResponse.of(product),
             dietary_restrictions=product.dietary_restrictions or [],
             category=CategoryResponse.model_validate(product.category),
             image_url=product_image_url(product),

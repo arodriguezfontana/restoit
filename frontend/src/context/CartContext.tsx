@@ -48,7 +48,7 @@ export function CartProvider({ children }: Readonly<{ children: ReactNode }>) {
   const addItem = useCallback((product: Product, quantity = 1, secondaryProduct?: Product, customName?: string) => {
     const secondaryId = secondaryProduct?.id;
     const customLineName = secondaryProduct
-      ? customName || formatPizzaHalfName(product.name, secondaryProduct.name)
+      ? customName || formatPizzaHalfName(product.name, secondaryProduct.name, product.variant_name)
       : undefined;
     const newLine = (): CartItem => ({
       id: createLineId(product.id),
@@ -60,7 +60,12 @@ export function CartProvider({ children }: Readonly<{ children: ReactNode }>) {
       modifications: [],
     });
     setItems((prev) =>
-      addOrIncrease(prev, (item) => isPlainLineOf(item, product.id, secondaryId), quantity, newLine)
+      addOrIncrease(
+        prev,
+        (item) => isPlainLineOf(item, product.id, secondaryId, product.variant_name),
+        quantity,
+        newLine
+      )
     );
   }, []);
 

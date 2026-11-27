@@ -25,6 +25,14 @@ def _restricciones(producto) -> str:
     return ""
 
 
+def _precios(producto) -> str:
+    """El precio, o el de cada variante si las tiene (ej. 'Grande $16,000.00 / Chica $14,000.00')."""
+    variantes = getattr(producto, "variants", None) or []
+    if not variantes:
+        return f"${producto.price:,.2f}"
+    return " / ".join(f"{variante.name} ${variante.price:,.2f}" for variante in variantes)
+
+
 def obtener_menu_actual() -> str:
     """Listado de productos disponibles (nombre, precio, categoría, restricciones y descripción), tal como están cargados en
     la base: lo que se cambia en el catálogo del panel se refleja en el mensaje siguiente."""
@@ -34,7 +42,7 @@ def obtener_menu_actual() -> str:
         if not productos:
             return "No hay productos disponibles en este momento."
         return "\n".join(
-            f"- {p.name} (${p.price:,.2f}) [{_nombre_de_categoria(p)}]{_restricciones(p)}"
+            f"- {p.name} ({_precios(p)}) [{_nombre_de_categoria(p)}]{_restricciones(p)}"
             + (f": {p.description}" if p.description else "")
             for p in productos
         )

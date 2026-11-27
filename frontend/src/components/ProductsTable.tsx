@@ -1,6 +1,13 @@
 import { ProductThumbnail } from '@/components/ProductThumbnail';
 import type { AdminProduct } from '@/types/catalog';
 import { formatCurrency } from '@/utils/currency';
+import { priceRange } from '@/utils/variants';
+
+/** El precio, o "desde – hasta" si las variantes cuestan distinto. */
+function formatPriceRange(product: AdminProduct): string {
+  const { min, max } = priceRange(product);
+  return min === max ? formatCurrency(min) : `${formatCurrency(min)} – ${formatCurrency(max)}`;
+}
 import { formatQuantity } from '@/utils/ingredients';
 
 interface ProductsTableProps {
@@ -72,7 +79,7 @@ export function ProductsTable({ products, onEdit, onEditRecipe, onDelete }: Prod
                 )}
               </td>
               <td className="py-3 px-3 sm:px-4 text-right font-semibold text-gray-900 whitespace-nowrap">
-                {formatCurrency(product.price)}
+                {formatPriceRange(product)}
               </td>
               <td className="py-3 px-3 sm:px-4 text-gray-600">
                 {product.recipe.length === 0 ? (

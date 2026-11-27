@@ -6,6 +6,7 @@ import logging
 import re
 import unicodedata
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from typing import Any
 
 from google import genai
@@ -1735,6 +1736,10 @@ def execute_copilot_action(
         prod = db.query(Product).filter(Product.id == prod_id).first()
         if not prod:
             raise NotFoundError(f"No se encontró el producto con id {prod_id}.")
+        if prod.has_variants:
+            raise BusinessRuleError(
+                f"'{prod.name}' tiene un precio por variante ({prod.describe_variants()}): cambialo desde el catálogo."
+            )
         with transaction(db):
             prod.price = round(float(new_price), 2)
         return CopilotActionExecutionResponse(
@@ -1759,7 +1764,7 @@ def execute_copilot_action(
         ).all()
         with transaction(db):
             for p in prods:
-                p.price = round(float(p.price) * (1 + float(pct) / 100.0), 2)
+                p.scale_prices(1 + Decimal(str(pct)) / 100)
         return CopilotActionExecutionResponse(
             success=True,
             message=f"Se aplicó un aumento del {pct}% a los {len(prods)} productos de la categoría '{cat.name}'.",

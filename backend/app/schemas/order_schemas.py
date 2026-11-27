@@ -189,6 +189,8 @@ class WebOrderItemCreate(BaseModel):
     quantity: int = Field(..., ge=1)
     secondary_product_id: int | None = Field(None, gt=0)
     custom_name: str | None = None
+    # Variante elegida de un producto que las tiene (ej. "Grande"); en una mitad y mitad, la de los dos gustos.
+    variant: str | None = Field(None, max_length=50)
     modifications: list[dict] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -231,6 +233,7 @@ class _OrderCreate(BaseModel):
                     item.custom_name,
                     item.modifications,
                     item.promotion_id,
+                    item.variant,
                 )
                 for item in self.items
             ],
@@ -265,6 +268,7 @@ class PromotionProductDetail(BaseModel):
     product_name: str
     quantity: int
     sector: str = "cocina"
+    variant_name: str | None = None
 
 
 class WebOrderItemResponse(BaseModel):
@@ -280,6 +284,7 @@ class WebOrderItemResponse(BaseModel):
     is_prepared: bool = False
     added_later: bool = False
     secondary_product_id: int | None = None
+    variant_name: str | None = None
     modifications: list[dict] = Field(default_factory=list)
     promotion_products: list[PromotionProductDetail] = Field(default_factory=list)
     promotion_description: str | None = None
@@ -290,9 +295,10 @@ class WebOrderItemResponse(BaseModel):
         promo_products = [
             PromotionProductDetail(
                 product_id=it.product_id,
-                product_name=it.product.name,
+                product_name=it.display_name,
                 quantity=it.quantity * item.quantity,
                 sector=it.product.effective_sector,
+                variant_name=it.variant_name,
             )
             for it in promotion_items
             if it.product
@@ -310,6 +316,7 @@ class WebOrderItemResponse(BaseModel):
             is_prepared=bool(item.is_prepared),
             added_later=bool(item.added_later),
             secondary_product_id=item.secondary_product_id,
+            variant_name=item.variant_name,
             modifications=item.modifications or [],
             promotion_products=promo_products,
             promotion_description=item.promotion.description if item.promotion else None,

@@ -29,6 +29,7 @@ export function toWebOrderItem(item: CartItem): WebOrderItemPayload {
     ...(item.promotion ? { promotion_id: item.promotion.id } : { product_id: item.product?.id }),
     ...(item.secondary_product?.id ? { secondary_product_id: item.secondary_product.id } : {}),
     ...(item.custom_name ? { custom_name: item.custom_name } : {}),
+    ...(!item.promotion && item.product?.variant_name ? { variant: item.product.variant_name } : {}),
     ...(item.modifications && item.modifications.length > 0 ? { modifications: item.modifications } : {}),
   };
 }

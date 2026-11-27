@@ -580,4 +580,29 @@ describe('MenuPage', () => {
     expect(screen.queryByRole('heading', { name: 'Pizza Muzzarella' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Coca-Cola 500ml' })).not.toBeInTheDocument();
   });
+
+  it('sin fondo elegido el menú se ve liso', async () => {
+    renderMenu();
+    await screen.findByRole('heading', { name: 'Pizzas' });
+
+    expect(screen.queryByTestId('menu-page-bg')).not.toBeInTheDocument();
+  });
+
+  it('muestra el fondo que el local eligió para el menú', async () => {
+    storeConfig.fetchStoreConfig.mockResolvedValue({
+      id: 1,
+      store_name: 'RestoIT',
+      address: null,
+      contact_phone: null,
+      logo_url: null,
+      theme_color: 'black',
+      menu_bg: 'color',
+      menu_bg_color: '#334155',
+    });
+    renderMenu();
+
+    const capa = await screen.findByTestId('menu-page-bg');
+    expect(capa.style.backgroundImage).toContain('linear-gradient');
+    expect(capa).not.toHaveClass('blur-md');
+  });
 });

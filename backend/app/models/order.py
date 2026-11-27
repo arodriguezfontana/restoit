@@ -152,11 +152,13 @@ def format_half_and_half_name(p1_name: str, p2_name: str, size_hint: str = "") -
     hint = (size_hint or "").lower()
     p1_lower = p1_name.lower()
     p2_lower = p2_name.lower()
-    base = (
-        "Pizza Chica"
-        if ("chica" in hint or "chica" in p1_lower or "chica" in p2_lower)
-        else "Pizza Grande"
-    )
+    if "chica" in hint or "chica" in p1_lower or "chica" in p2_lower:
+        base = "Pizza Chica"
+    elif "grande" in hint or not hint:
+        base = "Pizza Grande"
+    else:
+        # Otra variante (no un tamaño): se agrega después, entre paréntesis (ver with_variant_suffix).
+        base = "Pizza"
     return f"{base} [1/2 {f1} | 1/2 {f2}]"
 
 
@@ -177,12 +179,30 @@ def modifications_extra_cost(modifications: list[dict]) -> Decimal:
 
 
 def complete_line(line: tuple) -> tuple:
-    """(producto, cantidad, segundo producto, nombre propio, modificaciones, promoción) con None en lo que falte.
+    """(producto, cantidad, segundo producto, nombre propio, modificaciones, promoción, variante) con None en lo que
+    falte.
 
-    Las líneas de un pedido pueden traer solo (producto, cantidad) o todos sus datos.
+    Las líneas de un pedido pueden traer solo (producto, cantidad) o todos sus datos. La variante es el nombre de la
+    opción elegida de un producto que las tiene (ej. "Grande"); en una pizza mitad y mitad vale para los dos gustos.
     """
-    product, quantity, secondary_product, custom_name, modifications, promotion = (*line, None, None, None, None)[:6]
-    return product, quantity, secondary_product, custom_name, list(modifications) if modifications else [], promotion
+    product, quantity, secondary_product, custom_name, modifications, promotion, variant = (
+        *line,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )[:7]
+    variant = variant.strip() if isinstance(variant, str) and variant.strip() else None
+    modifications = list(modifications) if modifications else []
+    return product, quantity, secondary_product, custom_name, modifications, promotion, variant
+
+
+def with_variant_suffix(name: str, variant: str | None) -> str:
+    """El nombre con la variante entre paréntesis (ej. 'Muzzarella (Grande)'), salvo que ya la mencione."""
+    if not variant or variant.lower() in name.lower():
+        return name
+    return f"{name} ({variant})"
 
 
 def _line_key(
@@ -191,12 +211,32 @@ def _line_key(
     promotion_id: int | None,
     custom_name: str | None,
     modifications: list[dict] | None,
+    variant: str | None = None,
 ) -> tuple:
     """Identifica a las líneas iguales de un pedido: se suman en vez de repetirse."""
     modifications_key = json.dumps(modifications, sort_keys=True) if modifications else ""
     if promotion_id:
         return ("promo", promotion_id, custom_name, modifications_key)
-    return (product_id, secondary_product_id, custom_name, modifications_key)
+    return (product_id, secondary_product_id, (variant or "").lower(), custom_name, modifications_key)
+
+
+def _unit_price(product: Any, secondary_product: Any, variant: str | None) -> Decimal:
+    """Precio de una unidad sin modificaciones. Una pizza mitad y mitad toma el valor del gusto más caro, en la
+    variante pedida."""
+    try:
+        prices = [p.price_for(variant) for p in (product, secondary_product) if p is not None]
+    except BusinessRuleError as e:
+        raise InvalidOrderError(str(e)) from e
+    return max(prices)
+
+
+def _variant_of(product: Any, secondary_product: Any, variant: str | None) -> str | None:
+    """La variante con el nombre con que está cargada, o None si ningún producto de la línea tiene variantes."""
+    for p in (product, secondary_product):
+        normalized = p.normalized_variant_name(variant) if p is not None else None
+        if normalized:
+            return normalized
+    return None
 
 
 @dataclass
@@ -210,23 +250,24 @@ class _OrderLine:
     modifications: list[dict]
     quantity: int
     unit_price: Decimal
+    variant: str | None = None
 
     @classmethod
     def from_tuple(cls, line: tuple) -> "_OrderLine":
-        """Arma la línea desde (producto, cantidad[, segundo producto, nombre propio, modificaciones, promoción])."""
-        product, quantity, secondary_product, custom_name, modifications, promotion = complete_line(line)
+        """Arma la línea desde (producto, cantidad[, segundo producto, nombre propio, modificaciones, promoción,
+        variante])."""
+        product, quantity, secondary_product, custom_name, modifications, promotion, variant = complete_line(line)
         if quantity < 1:
             raise InvalidOrderError("Hay una cantidad inválida en el pedido.")
         if promotion is not None:
             custom_name = custom_name or promotion.name
             return cls(product, secondary_product, promotion, custom_name, modifications, quantity, promotion.price)
+        base_price = _unit_price(product, secondary_product, variant)
+        variant = _variant_of(product, secondary_product, variant)
         if secondary_product:
-            custom_name = custom_name or format_half_and_half_name(product.name, secondary_product.name)
-            base_price = max(product.price, secondary_product.price)
-        else:
-            base_price = product.price
+            custom_name = custom_name or format_half_and_half_name(product.name, secondary_product.name, variant or "")
         unit_price = base_price + modifications_extra_cost(modifications)
-        return cls(product, secondary_product, None, custom_name, modifications, quantity, unit_price)
+        return cls(product, secondary_product, None, custom_name, modifications, quantity, unit_price, variant)
 
     @property
     def key(self) -> tuple:
@@ -236,15 +277,16 @@ class _OrderLine:
             self.promotion.id if self.promotion else None,
             self.custom_name,
             self.modifications,
+            self.variant,
         )
 
     @property
     def label(self) -> str:
         if self.custom_name:
-            return self.custom_name
+            return with_variant_suffix(self.custom_name, self.variant)
         if self.promotion:
             return self.promotion.name
-        return self.product.name if self.product else ""
+        return with_variant_suffix(self.product.name, self.variant) if self.product else ""
 
     def unavailable_names(self) -> list[str]:
         if self.promotion is not None:
@@ -263,6 +305,7 @@ class _OrderLine:
             quantity=self.quantity,
             unit_price=self.unit_price,
             custom_name=self.custom_name,
+            variant_name=self.variant,
             modifications=self.modifications,
             added_later=added_later,
         )
@@ -427,7 +470,12 @@ class Order(Base):
         ordered: Counter = Counter()
         for item in self.items:
             key = _line_key(
-                item.product_id, item.secondary_product_id, item.promotion_id, item.custom_name, item.modifications
+                item.product_id,
+                item.secondary_product_id,
+                item.promotion_id,
+                item.custom_name,
+                item.modifications,
+                item.variant_name,
             )
             ordered[key] += item.quantity
         return ordered
@@ -639,6 +687,8 @@ class OrderItem(Base):
     secondary_product_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("products.id", ondelete="SET NULL"), nullable=True)
     promotion_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("promotions.id", ondelete="SET NULL"), nullable=True)
     custom_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Variante elegida (ej. "Grande"), tal como se llamaba al pedirla: el pedido la conserva aunque después cambie.
+    variant_name: Mapped[str | None] = mapped_column(String(50), nullable=True)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     unit_price: Mapped[Decimal] = mapped_column(MoneyColumn, nullable=False)
     is_prepared: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
@@ -657,13 +707,15 @@ class OrderItem(Base):
 
     @property
     def display_name(self) -> str:
-        if self.custom_name:
-            return self.custom_name
-        if self.promotion:
+        if self.promotion and not self.custom_name:
             return self.promotion.name
-        if self.secondary_product and self.product:
-            return format_half_and_half_name(self.product.name, self.secondary_product.name)
-        return self.product.name if self.product else ""
+        if self.custom_name:
+            name = self.custom_name
+        elif self.secondary_product and self.product:
+            name = format_half_and_half_name(self.product.name, self.secondary_product.name, self.variant_name or "")
+        else:
+            name = self.product.name if self.product else ""
+        return with_variant_suffix(name, self.variant_name)
 
     @property
     def comanda_display(self) -> str:
@@ -675,7 +727,7 @@ class OrderItem(Base):
 
     @staticmethod
     def _promotion_comanda_text(promotion: "Promotion") -> str:
-        included = ", ".join(f"{it.quantity}x {it.product.name}" for it in promotion.items if it.product)
+        included = ", ".join(f"{it.quantity}x {it.display_name}" for it in promotion.items if it.product)
         return f"PROMO: {promotion.name}" + (f" ({included})" if included else "")
 
     @property

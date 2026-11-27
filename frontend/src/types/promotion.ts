@@ -2,6 +2,8 @@ export interface PromotionItem {
   product_id: number;
   product_name: string;
   quantity: number;
+  /** Variante incluida (ej. Grande), si el producto tiene variantes. */
+  variant_name?: string | null;
 }
 
 export interface Promotion {
@@ -25,6 +27,7 @@ export interface PromotionPayload {
   items: {
     product_id: number;
     quantity: number;
+    variant_name?: string | null;
   }[];
   image_url?: string | null;
 }

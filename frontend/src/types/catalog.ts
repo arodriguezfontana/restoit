@@ -1,5 +1,5 @@
 import type { RecipeItem } from '@/types/ingredient';
-import type { IngredientExtra, PreparationSector, ProductCategory } from '@/types/order';
+import type { IngredientExtra, PreparationSector, ProductCategory, ProductVariant } from '@/types/order';
 
 /** Producto tal como lo ve el panel: incluye los no disponibles, los sin categoría y su receta. */
 export interface AdminProduct {
@@ -15,12 +15,17 @@ export interface AdminProduct {
   image_url: string | null;
   recipe: RecipeItem[];
   allowed_extras?: IngredientExtra[];
+  /** Opciones con su precio; `price` es el de la más barata. */
+  variants?: ProductVariant[];
 }
 
 export interface ProductPayload {
   name: string;
   description: string;
-  price: number;
+  /** Sin variantes; con variantes el precio sale de ellas. */
+  price?: number;
+  /** Vacío: el producto tiene un solo precio. */
+  variants?: ProductVariant[];
   category_id: number;
   is_active: boolean;
   dietary_restrictions: string[];

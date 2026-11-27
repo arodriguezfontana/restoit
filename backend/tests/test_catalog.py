@@ -63,6 +63,7 @@ def test_crea_un_producto_y_aparece_en_el_menu_publico(client, db_session, muzza
         "image_url": None,
         "recipe": [],
         "allowed_extras": [],
+        "variants": [],
     }
     assert _menu(client)["Fugazzeta"] == "Pizzas"
 

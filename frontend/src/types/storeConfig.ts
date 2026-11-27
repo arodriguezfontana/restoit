@@ -102,6 +102,9 @@ export interface StoreConfig {
   panel_bg?: PanelBgOption;
   panel_bg_image?: string | null;
   panel_bg_color?: string | null;
+  menu_bg?: PanelBgOption;
+  menu_bg_image?: string | null;
+  menu_bg_color?: string | null;
   mp_alias?: string | null;
   accepts_cash?: boolean;
   accepts_transfer?: boolean;
@@ -130,6 +133,9 @@ export interface StoreConfigUpdatePayload {
   panel_bg?: PanelBgOption;
   panel_bg_image?: string | null;
   panel_bg_color?: string | null;
+  menu_bg?: PanelBgOption;
+  menu_bg_image?: string | null;
+  menu_bg_color?: string | null;
   mp_alias?: string | null;
   accepts_cash?: boolean;
   accepts_transfer?: boolean;

@@ -69,6 +69,9 @@ function formValuesFrom(config: StoreConfig) {
     panelBg: config.panel_bg || 'none',
     panelBgImage: config.panel_bg_image || null,
     panelBgColor: config.panel_bg_color || null,
+    menuBg: config.menu_bg || 'none',
+    menuBgImage: config.menu_bg_image || null,
+    menuBgColor: config.menu_bg_color || null,
     mpAlias: config.mp_alias || '',
     payments: paymentSettingsFrom(config),
     cashPinEnabled: Boolean(config.cash_pin_enabled),
@@ -107,6 +110,9 @@ export function useStoreSettingsForm(onConfigUpdated?: (config: StoreConfig) => 
   const [panelBg, setPanelBg] = useState<PanelBgOption>('none');
   const [panelBgImage, setPanelBgImage] = useState<string | null>(null);
   const [panelBgColor, setPanelBgColor] = useState<string | null>(null);
+  const [menuBg, setMenuBg] = useState<PanelBgOption>('none');
+  const [menuBgImage, setMenuBgImage] = useState<string | null>(null);
+  const [menuBgColor, setMenuBgColor] = useState<string | null>(null);
   const [mpAlias, setMpAlias] = useState('');
   const [payments, setPayments] = useState<PaymentSettings>(() => paymentSettingsFrom({} as StoreConfig));
   const [mercadopagoAvailable, setMercadopagoAvailable] = useState(false);
@@ -129,6 +135,9 @@ export function useStoreSettingsForm(onConfigUpdated?: (config: StoreConfig) => 
     setPanelBg(values.panelBg);
     setPanelBgImage(values.panelBgImage);
     setPanelBgColor(values.panelBgColor);
+    setMenuBg(values.menuBg);
+    setMenuBgImage(values.menuBgImage);
+    setMenuBgColor(values.menuBgColor);
     setMpAlias(values.mpAlias);
     setPayments(values.payments);
     setMercadopagoAvailable(Boolean(config.mercadopago_available));
@@ -227,6 +236,9 @@ export function useStoreSettingsForm(onConfigUpdated?: (config: StoreConfig) => 
         panel_bg: panelBg,
         panel_bg_image: panelBgImage,
         panel_bg_color: panelBgColor,
+        menu_bg: menuBg,
+        menu_bg_image: menuBgImage,
+        menu_bg_color: menuBgColor,
         mp_alias: mpAlias.trim() || null,
         accepts_cash: payments.acceptsCash,
         accepts_transfer: payments.acceptsTransfer,
@@ -273,6 +285,12 @@ export function useStoreSettingsForm(onConfigUpdated?: (config: StoreConfig) => 
     setPanelBgImage,
     panelBgColor,
     setPanelBgColor,
+    menuBg,
+    setMenuBg,
+    menuBgImage,
+    setMenuBgImage,
+    menuBgColor,
+    setMenuBgColor,
     mpAlias,
     payments,
     setPayments,

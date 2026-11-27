@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import type { SubmitEvent } from 'react';
 import { PromotionItemsEditor } from '@/components/PromotionItemsEditor';
+import { linePrice } from '@/utils/promotionLines';
+import type { PromotionLine } from '@/utils/promotionLines';
 import { ImageChoiceField } from '@/components/ui/ImageChoiceField';
 import { Modal, ModalBody, ModalFooter } from '@/components/ui/Modal';
 import { useImageChoice } from '@/hooks/useImageChoice';
@@ -22,8 +24,12 @@ export function PromotionFormModal({ promotion, products, onClose, onSave }: Pro
   const [description, setDescription] = useState(promotion?.description ?? '');
   const [price, setPrice] = useState(promotion ? String(promotion.price) : '');
   const [isActive, setIsActive] = useState(promotion?.is_active ?? true);
-  const [selectedItems, setSelectedItems] = useState<{ product_id: number; quantity: number }[]>(
-    promotion?.items.map((it) => ({ product_id: it.product_id, quantity: it.quantity })) ?? []
+  const [selectedItems, setSelectedItems] = useState<PromotionLine[]>(
+    promotion?.items.map((it) => ({
+      product_id: it.product_id,
+      quantity: it.quantity,
+      variant_name: it.variant_name ?? null,
+    })) ?? []
   );
 
   const imageChoice = useImageChoice(promotion?.image_url);
@@ -74,8 +80,7 @@ export function PromotionFormModal({ promotion, products, onClose, onSave }: Pro
 
   // Suma regular de los productos
   const regularTotal = selectedItems.reduce((acc, item) => {
-    const prod = productMap.get(item.product_id);
-    return acc + (prod ? prod.price * item.quantity : 0);
+    return acc + linePrice(item, productMap.get(item.product_id)) * item.quantity;
   }, 0);
 
   return (

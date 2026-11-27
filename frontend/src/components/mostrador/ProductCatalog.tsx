@@ -6,6 +6,19 @@ import type { Promotion } from '@/types/promotion';
 import { productImageSrc } from '@/utils/catalog';
 import { formatCurrency } from '@/utils/currency';
 import { groupByCategory } from '@/utils/productGrouping';
+import { orderLineKey } from '@/hooks/useOrderLines';
+import { productDisplayName, withVariant } from '@/utils/variants';
+
+/** Cada producto, o cada variante de los que las tienen (ej. Muzzarella Grande y Muzzarella Chica), ya con su precio. */
+function orderableProducts(products: Product[]): Product[] {
+  return products.flatMap((product) =>
+    product.variants && product.variants.length > 0
+      ? product.variants.map((variant) => withVariant(product, variant))
+      : [product]
+  );
+}
+
+const tileKey = (product: Product): string => orderLineKey({ product, quantity: 0 });
 
 const ALL_CATEGORIES = 'all';
 const PROMOTIONS_CATEGORY = 'promos';
@@ -82,14 +95,17 @@ function ProductTile({ product, quantity, onAdd }: { product: Product; quantity:
       type="button"
       onClick={onAdd}
       disabled={quantity >= MAX_QUANTITY_PER_ITEM}
-      title={`Agregar ${product.name}`}
+      title={`Agregar ${productDisplayName(product)}`}
       className={`${TILE_BASE_CLASS} ${
         quantity > 0 ? 'border-black bg-gray-50' : 'border-gray-200 bg-white hover:border-gray-400 hover:shadow-md'
       }`}
     >
       <QuantityBadge quantity={quantity} />
       <ProductThumbnail product={product} size="sm" />
-      <span className="text-xs font-semibold text-gray-900 leading-tight">{product.name}</span>
+      <span className="text-xs font-semibold text-gray-900 leading-tight">
+        {product.name}
+        {product.variant_name && <span className="block font-bold text-gray-600">{product.variant_name}</span>}
+      </span>
       {product.dietary_restrictions && product.dietary_restrictions.length > 0 && (
         <span className="flex flex-wrap gap-1 justify-center" aria-hidden="true">
           {product.dietary_restrictions.map((restriction) => (
@@ -218,7 +234,7 @@ export function ProductCatalog({
     [products, activeCategory, search]
   );
   const quantityByProduct = useMemo(
-    () => new Map(lines.filter((line) => !line.promotion).map((line) => [line.product.id, line.quantity])),
+    () => new Map(lines.filter((line) => !line.promotion).map((line) => [orderLineKey(line), line.quantity])),
     [lines]
   );
   const quantityByPromo = useMemo(
@@ -297,11 +313,11 @@ export function ProductCatalog({
           <div key={group.category.id}>
             <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">{group.category.name}</h3>
             <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2">
-              {group.products.map((product) => (
+              {orderableProducts(group.products).map((product) => (
                 <ProductTile
-                  key={product.id}
+                  key={tileKey(product)}
                   product={product}
-                  quantity={quantityByProduct.get(product.id) ?? 0}
+                  quantity={quantityByProduct.get(tileKey(product)) ?? 0}
                   onAdd={() => onAddProduct(product)}
                 />
               ))}

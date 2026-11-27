@@ -14,6 +14,9 @@ export function formatPizzaHalfName(p1Name: string, p2Name: string, sizeHint = '
   let base = 'Pizza Grande';
   if (hint.includes('chica') || p1Lower.includes('chica') || p2Lower.includes('chica')) {
     base = 'Pizza Chica';
+  } else if (hint && !hint.includes('grande')) {
+    // Otra variante (no un tamaño): va al final, entre paréntesis.
+    return `Pizza [1/2 ${sabor1} | 1/2 ${sabor2}] (${sizeHint})`;
   }
   return `${base} [1/2 ${sabor1} | 1/2 ${sabor2}]`;
 }

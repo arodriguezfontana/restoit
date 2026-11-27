@@ -200,6 +200,38 @@ def test_el_fondo_del_panel_tiene_que_ser_una_opcion_valida_con_imagen_data_url(
     assert client.put(CONFIG_URL, json=invalida).status_code == 422
 
 
+# --- Fondo del menú público ---
+
+
+def test_el_menu_arranca_sin_fondo(public_client):
+    data = public_client.get(CONFIG_URL).json()
+
+    assert (data["menu_bg"], data["menu_bg_image"], data["menu_bg_color"]) == ("none", None, None)
+
+
+def test_el_dueno_elige_el_fondo_del_menu_sin_tocar_el_del_panel(client, public_client):
+    client.put(CONFIG_URL, json={**BASE, "panel_bg": "bistro", "menu_bg": "color", "menu_bg_color": "#334155"})
+
+    data = public_client.get(CONFIG_URL).json()
+    assert (data["panel_bg"], data["menu_bg"], data["menu_bg_color"]) == ("bistro", "color", "#334155")
+
+
+def test_el_dueno_sube_una_imagen_propia_para_el_menu(client, public_client):
+    image = "data:image/png;base64,iVBORw0KGgo="
+    response = client.put(CONFIG_URL, json={**BASE, "menu_bg": "custom", "menu_bg_image": image})
+
+    assert response.status_code == 200
+    assert public_client.get(CONFIG_URL).json()["menu_bg_image"] == image
+
+
+def test_el_fondo_del_menu_exige_su_imagen_o_color_y_valores_validos(client):
+    assert client.put(CONFIG_URL, json={**BASE, "menu_bg": "custom"}).status_code == 422
+    assert client.put(CONFIG_URL, json={**BASE, "menu_bg": "color"}).status_code == 422
+    assert client.put(CONFIG_URL, json={**BASE, "menu_bg": "pizza"}).status_code == 422
+    invalida = {**BASE, "menu_bg": "custom", "menu_bg_image": "https://x.com/a.js"}
+    assert client.put(CONFIG_URL, json=invalida).status_code == 422
+
+
 # --- Medios de pago (US-59) ---
 
 

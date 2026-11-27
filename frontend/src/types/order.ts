@@ -11,10 +11,17 @@ export interface IngredientExtra {
   extra_price: number;
 }
 
+/** Opción de un producto con su propio precio (ej. Grande / Chica, Carne / Pollo). */
+export interface ProductVariant {
+  name: string;
+  price: number;
+}
+
 export interface Product {
   id: number;
   name: string;
   description: string | null;
+  /** Con variantes, el de la más barata; el de la elegida en `variant_name` si ya se eligió una (ver withVariant). */
   price: number;
   category: ProductCategory;
   dietary_restrictions: string[];
@@ -22,6 +29,10 @@ export interface Product {
   image_url: string | null;
   recipe_ingredients?: string[];
   allowed_extras?: IngredientExtra[];
+  /** Si tiene, se pide eligiendo una. */
+  variants?: ProductVariant[];
+  /** La variante elegida al agregarlo al carrito o al pedido. */
+  variant_name?: string;
 }
 
 /** Debe coincidir con MAX_QUANTITY_PER_ITEM del backend. */
@@ -67,6 +78,8 @@ export interface WebOrderItemPayload {
   quantity: number;
   secondary_product_id?: number;
   custom_name?: string;
+  /** Variante elegida de un producto que las tiene (en una mitad y mitad, la de los dos gustos). */
+  variant?: string;
   modifications?: OrderItemModification[];
 }
 
@@ -137,6 +150,7 @@ export interface PromotionProductDetail {
   product_name: string;
   quantity: number;
   sector: PreparationSector | string;
+  variant_name?: string | null;
 }
 
 export interface WebOrderItem {
@@ -152,6 +166,7 @@ export interface WebOrderItem {
   is_prepared?: boolean;
   /** Lo agregó el cliente después de registrar el pedido. */
   added_later?: boolean;
+  variant_name?: string | null;
   modifications?: OrderItemModification[];
   promotion_products?: PromotionProductDetail[];
   promotion_description?: string | null;

@@ -22,7 +22,7 @@ from app.core.phone import normalize_phone
 from app.core.text import sin_acentos
 from app.core.time import ahora_local
 from app.db.session import SessionLocal
-from app.models.menu import Product
+from app.models.menu import InvalidVariantError, Product
 from app.models.order import (
     MAX_QUANTITY_PER_ITEM,
     PICKUP_ADDRESS,
@@ -31,6 +31,7 @@ from app.models.order import (
     PaymentMethod,
     clean_pizza_flavor,
     modifications_extra_cost,
+    with_variant_suffix,
 )
 from app.models.promotion import Promotion
 from app.repositories import promotion_repository
@@ -46,7 +47,7 @@ from app.services.business_hours_service import (
     proxima_apertura,
     proxima_fecha_abierta_a_la_hora,
 )
-from app.services.catalog_service import find_available_products_by_name
+from app.services.catalog_service import find_available_products_by_name, list_available_products
 from app.services.mercadopago_service import start_chat_payment
 from app.services.modifier_nlp import (
     extraer_modificadores_de_texto,
@@ -297,8 +298,26 @@ def _cantidad_del_item(item: dict) -> int:
         return 1
 
 
+_PATRON_VARIANTE_AL_FINAL = re.compile(r"\(([^()]+)\)\s*$")
+
+
+def _variante_de_la_linea(item: dict) -> str | None:
+    """La variante del ítem validado. Si el modelo la perdió al devolver el pedido, se toma del nombre que se le
+    mostró al cliente ("Muzzarella (Grande)", "Pizza Grande [1/2 ...]"); el pedido la valida contra el producto."""
+    variante = item.get("variant") or item.get("variante")
+    if variante:
+        return str(variante)
+    nombre = str(item.get("nombre") or "")
+    al_final = _PATRON_VARIANTE_AL_FINAL.search(nombre)
+    if al_final:
+        return al_final.group(1).strip()
+    tamanio = _tamanio_en(nombre.split("[")[0]) if "[" in nombre else ""
+    return tamanio.capitalize() or None
+
+
 def _linea_del_modelo(item: dict) -> tuple | None:
-    """(product_id, cantidad, secondary_product_id, custom_name, modifications, promotion_id) o None si no trae producto ni promo."""
+    """(product_id, cantidad, secondary_product_id, custom_name, modifications, promotion_id, variante) o None si no
+    trae producto ni promo."""
     promo_id = _id_opcional(item, "promotion_id")
     product_id = _id_opcional(item, "product_id")
     if promo_id is None and product_id is None:
@@ -306,7 +325,16 @@ def _linea_del_modelo(item: dict) -> tuple | None:
     secondary_id = _id_opcional(item, "secondary_product_id")
     lleva_nombre_propio = item.get("nombre") and (secondary_id is not None or promo_id is not None)
     custom_name = str(item["nombre"]) if lleva_nombre_propio else None
-    return product_id, int(item.get("quantity") or 1), secondary_id, custom_name, _modificaciones_del_item(item), promo_id
+    variante = None if promo_id is not None else _variante_de_la_linea(item)
+    return (
+        product_id,
+        int(item.get("quantity") or 1),
+        secondary_id,
+        custom_name,
+        _modificaciones_del_item(item),
+        promo_id,
+        variante,
+    )
 
 
 def items_del_modelo(items: list) -> list[tuple] | None:
@@ -361,6 +389,8 @@ class PedidoMitadYMitad:
     sabor2: str
     tamanio: str
     cantidad: int
+    # Variante pedida explícitamente (ej. "Grande"), si el modelo la pasó aparte.
+    variante: str = ""
 
 
 def _tamanio_en(texto: str) -> str:
@@ -441,10 +471,12 @@ def _detectar_mitad_y_mitad(item: dict) -> PedidoMitadYMitad | None:
     sabor2 = item.get("sabor2") or item.get("gusto2")
     cantidad = _cantidad_del_item(item)
     size_hint = str(item.get("tamanio") or item.get("size") or "")
+    variante = _variante_explicita(item)
     if sabor1 and sabor2:
-        return PedidoMitadYMitad(str(sabor1).strip(), str(sabor2).strip(), size_hint, cantidad)
+        return PedidoMitadYMitad(str(sabor1).strip(), str(sabor2).strip(), size_hint, cantidad, variante)
     nombre = str(item.get("nombre", "")).strip()
-    return _mitad_y_mitad_desde_nombre(nombre, size_hint, cantidad) if nombre else None
+    mitad = _mitad_y_mitad_desde_nombre(nombre, size_hint, cantidad) if nombre else None
+    return PedidoMitadYMitad(mitad.sabor1, mitad.sabor2, mitad.tamanio, mitad.cantidad, variante) if mitad else None
 
 
 # --- Resolución de ítems contra el menú -------------------------------------------------------------------
@@ -571,15 +603,24 @@ def _resolver_mitad_y_mitad(db: Session, item: dict, mitad: PedidoMitadYMitad, r
         return
     p1, p2 = sabores
     modificaciones = filtrar_modificadores_para_producto(modificaciones, p1, p2)
-    # Regla de cobro: la pizza mitad y mitad toma el valor del gusto más caro.
-    precio_unitario = max(p1.price, p2.price) + modifications_extra_cost(modificaciones)
+    variante = mitad.variante or mitad.tamanio
+    try:
+        # Regla de cobro: la pizza mitad y mitad toma el valor del gusto más caro (en la variante pedida).
+        precio_base = max(p1.price_for(variante), p2.price_for(variante))
+    except InvalidVariantError:
+        con_variantes = p1 if p1.has_variants else p2
+        resueltos.agregar_ambiguedad(f"- {descripcion}: viene en {con_variantes.describe_variants()}. ¿Cuál querés?")
+        return
+    variante = p1.normalized_variant_name(variante) or p2.normalized_variant_name(variante)
+    precio_unitario = precio_base + modifications_extra_cost(modificaciones)
     subtotal = precio_unitario * mitad.cantidad
-    nombre = _nombre_pizza_mitad_y_mitad(p1.name, p2.name, mitad.tamanio)
+    nombre = with_variant_suffix(_nombre_pizza_mitad_y_mitad(p1.name, p2.name, variante or mitad.tamanio), variante)
     resueltos.agregar_item(
         {
             "product_id": p1.id,
             "secondary_product_id": p2.id,
             "nombre": nombre,
+            "variant": variante,
             "quantity": mitad.cantidad,
             "unit_price": float(precio_unitario),
             "modifications": modificaciones,
@@ -633,28 +674,127 @@ def _producto_pedido(
     return _buscar_producto(db, nombre), []
 
 
+# --- Variantes (ej. Grande / Chica, Carne / Pollo) --------------------------------------------------------
+
+
+def _variante_explicita(item: dict) -> str:
+    """La variante que el modelo pasó aparte del nombre, si la pasó."""
+    return str(item.get("variante") or item.get("variant") or item.get("tamanio") or item.get("size") or "").strip()
+
+
+def _menciona(texto: str, palabra: str) -> bool:
+    return re.search(rf"\b{re.escape(sin_acentos(palabra.lower()))}\b", sin_acentos(texto.lower())) is not None
+
+
+def _variante_en_texto(producto: Product, texto: str) -> str | None:
+    """La única variante del producto que menciona el texto (ej. "muzzarella grande" -> "Grande"), o None.
+
+    No cuentan las palabras que ya son parte del nombre del producto.
+    """
+    resto = re.sub(re.escape(sin_acentos(producto.name.lower())), " ", sin_acentos(texto.lower()))
+    mencionadas = [variante.name for variante in producto.variants if _menciona(resto, variante.name)]
+    return mencionadas[0] if len(mencionadas) == 1 else None
+
+
+def _nombres_de_variantes(db: Session) -> list[str]:
+    """Las variantes que existen en el menú, sin repetir (ej. Grande, Chica, Carne, Pollo)."""
+    nombres = {variante.name.lower(): variante.name for p in list_available_products(db) for variante in p.variants}
+    return list(nombres.values())
+
+
+def _sin_variante(db: Session, nombre: str) -> tuple[str, str] | None:
+    """(nombre sin la variante, variante) si el nombre menciona una sola variante del menú ("milanesa simple de pollo"
+    -> ("milanesa simple", "Pollo")), o None."""
+    mencionadas = [variante for variante in _nombres_de_variantes(db) if _menciona(nombre, variante)]
+    if len(mencionadas) != 1:
+        return None
+    variante = mencionadas[0]
+    patron = rf"\s*\b(?:de\s+|en\s+|con\s+)?{re.escape(variante)}\b"
+    sin_variante = re.sub(patron, " ", nombre, count=1, flags=re.IGNORECASE)
+    sin_variante = re.sub(r"\s+", " ", sin_variante).strip(" ,-")
+    return (sin_variante, variante) if sin_variante else None
+
+
+def _con_variante(encontrado: Product | list[Product] | None, variante: str) -> list[Product]:
+    candidatos = encontrado if isinstance(encontrado, list) else [encontrado] if encontrado else []
+    return [p for p in candidatos if p.variant_named(variante)]
+
+
+def _productos_que_contienen(db: Session, texto: str) -> list[Product]:
+    """Todos los productos disponibles cuyo nombre contiene el texto (aunque alguno se llame exactamente así)."""
+    buscado = sin_acentos(texto.lower())
+    return [p for p in list_available_products(db) if buscado in sin_acentos(p.name.lower())]
+
+
+def _producto_por_nombre_sin_variante(
+    db: Session, base_nombre: str, modificaciones: list[dict]
+) -> tuple[Product | list[Product], list[dict], str] | None:
+    """El producto (o los candidatos, si hay varios) cuando el nombre trae la variante pegada ("milanesa simple de
+    pollo", "napolitana grande"). Solo cuentan los productos que vienen en esa variante."""
+    separado = _sin_variante(db, base_nombre)
+    if separado is None:
+        return None
+    sin_variante, variante = separado
+    encontrado, modificaciones = _producto_pedido(db, sin_variante, sin_variante, modificaciones)
+    candidatos = _con_variante(encontrado, variante) or _con_variante(_productos_que_contienen(db, sin_variante), variante)
+    if not candidatos:
+        return None
+    return (candidatos[0] if len(candidatos) == 1 else candidatos), modificaciones, variante
+
+
+def _producto_y_variante(
+    db: Session, nombre: str, base_nombre: str, modificaciones: list[dict], variante_pedida: str
+) -> tuple[Product | list[Product] | None, list[dict], str | None]:
+    """El producto pedido, sus modificaciones y la variante que eligió el cliente (None si no dijo cuál)."""
+    producto, modificaciones_del_producto = _producto_pedido(db, nombre, base_nombre, modificaciones)
+    if isinstance(producto, Product):
+        variante = variante_pedida or _variante_en_texto(producto, base_nombre)
+        if not producto.has_variants or producto.variant_named(variante):
+            return producto, modificaciones_del_producto, variante
+    con_variante_en_el_nombre = None if variante_pedida else _producto_por_nombre_sin_variante(db, base_nombre, modificaciones)
+    if con_variante_en_el_nombre:
+        return con_variante_en_el_nombre
+    if isinstance(producto, Product):
+        return producto, modificaciones_del_producto, variante_pedida or None
+    return producto, modificaciones_del_producto, None
+
+
 def _resolver_producto(
-    db: Session, resueltos: ItemsResueltos, nombre: str, base_nombre: str, modificaciones: list[dict], cantidad: int
+    db: Session,
+    resueltos: ItemsResueltos,
+    nombre: str,
+    base_nombre: str,
+    modificaciones: list[dict],
+    cantidad: int,
+    variante_pedida: str = "",
 ) -> None:
-    producto, modificaciones = _producto_pedido(db, nombre, base_nombre, modificaciones)
+    producto, modificaciones, variante = _producto_y_variante(db, nombre, base_nombre, modificaciones, variante_pedida)
     if not producto:
         resueltos.agregar_aviso(f"- No pudimos encontrar el producto: '{nombre}'")
         return
     if isinstance(producto, list):
         resueltos.agregar_ambiguedad(f"- '{base_nombre}' puede ser: {_nombres(producto)}. ¿Cuál querés?")
         return
+    try:
+        precio_base = producto.price_for(variante)
+    except InvalidVariantError:
+        resueltos.agregar_ambiguedad(f"- '{producto.name}' viene en {producto.describe_variants()}. ¿Cuál querés?")
+        return
+    variante = producto.normalized_variant_name(variante)
     modificaciones = filtrar_modificadores_para_producto(modificaciones, producto)
-    precio_unitario = producto.price + modifications_extra_cost(modificaciones)
+    precio_unitario = precio_base + modifications_extra_cost(modificaciones)
     subtotal = precio_unitario * cantidad
+    nombre_mostrado = with_variant_suffix(producto.name, variante)
     resueltos.agregar_item(
         {
             "product_id": producto.id,
-            "nombre": producto.name,
+            "nombre": nombre_mostrado,
+            "variant": variante,
             "quantity": cantidad,
             "unit_price": float(precio_unitario),
             "modifications": modificaciones,
         },
-        _linea_de_resumen(producto.name, cantidad, subtotal, modificaciones),
+        _linea_de_resumen(nombre_mostrado, cantidad, subtotal, modificaciones),
         subtotal,
     )
 
@@ -672,7 +812,7 @@ def _resolver_item_comun(db: Session, item: dict, resueltos: ItemsResueltos) -> 
     if promociones:
         _resolver_promocion(resueltos, nombre, promociones, cantidad)
         return
-    _resolver_producto(db, resueltos, nombre, base_nombre, modificaciones, cantidad)
+    _resolver_producto(db, resueltos, nombre, base_nombre, modificaciones, cantidad, _variante_explicita(item))
 
 
 def _resolver_item(db: Session, item: dict, resueltos: ItemsResueltos) -> None:
@@ -705,14 +845,27 @@ def _es_producto_suelto(item: dict) -> bool:
     )
 
 
-def _veces_que_entra(requisitos: dict[int, int], disponible: dict[int, int]) -> int:
-    return min(disponible.get(pid, 0) // cantidad for pid, cantidad in requisitos.items())
+# Cada producto suelto se cuenta por (id del producto, variante en minúsculas): una Muzzarella Chica no arma una
+# promo de Muzzarellas Grandes.
+_ClaveDeProducto = tuple[int, str]
 
 
-def _promo_candidata(promo: Promotion, disponible: dict[int, int]) -> tuple[Decimal, Promotion, dict[int, int]] | None:
+def _clave_de_producto(product_id: int, variante: str | None) -> _ClaveDeProducto:
+    return product_id, (variante or "").lower()
+
+
+def _clave_del_item(item: dict) -> _ClaveDeProducto:
+    return _clave_de_producto(item["product_id"], item.get("variant"))
+
+
+def _veces_que_entra(requisitos: dict, disponible: dict) -> int:
+    return min(disponible.get(clave, 0) // cantidad for clave, cantidad in requisitos.items())
+
+
+def _promo_candidata(promo: Promotion, disponible: dict) -> tuple[Decimal, Promotion, dict] | None:
     """(ahorro por vez, promo, productos que pide) si la promo sale más barata y los productos sueltos alcanzan."""
-    requisitos = {it.product_id: it.quantity for it in promo.items}
-    precio_normal = sum((to_money(it.product.price) * it.quantity for it in promo.items), Decimal(0))
+    requisitos = {_clave_de_producto(it.product_id, it.variant_name): it.quantity for it in promo.items}
+    precio_normal = sum((to_money(it.regular_price) * it.quantity for it in promo.items), Decimal(0))
     ahorro = precio_normal - to_money(promo.price)
     if ahorro > 0 and _veces_que_entra(requisitos, disponible) >= 1:
         return ahorro, promo, requisitos
@@ -783,7 +936,7 @@ class _ReemplazoPorPromociones:
         if item.get("promotion_id") in self._aplicadas:
             self._sumar_a_promo_pedida(item)
             return
-        if indice in self._sueltos and self._consumo.get(item["product_id"], 0) > 0:
+        if indice in self._sueltos and self._consumo.get(_clave_del_item(item), 0) > 0:
             linea_restante = self._descontar_lo_usado_en_promos(item)
         else:
             linea_restante = linea
@@ -801,8 +954,8 @@ class _ReemplazoPorPromociones:
     def _descontar_lo_usado_en_promos(self, item: dict) -> str | None:
         """Pone las promos donde estaba el primer producto suelto y devuelve la línea de lo que sobra (None si nada)."""
         self._agregar_promos_nuevas()
-        tomado = min(item["quantity"], self._consumo[item["product_id"]])
-        self._consumo[item["product_id"]] -= tomado
+        tomado = min(item["quantity"], self._consumo[_clave_del_item(item)])
+        self._consumo[_clave_del_item(item)] -= tomado
         item["quantity"] -= tomado
         if item["quantity"] == 0:
             return None
@@ -844,8 +997,9 @@ def _aplicar_promociones(db: Session, resueltos: ItemsResueltos) -> None:
     resueltos.total -= sum((ahorro for _, _, ahorro in aplicadas.values()), Decimal(0))
 
 
-def _sumar_cantidad(cantidades: dict[int, int], item: dict) -> None:
-    cantidades[item["product_id"]] = cantidades.get(item["product_id"], 0) + item["quantity"]
+def _sumar_cantidad(cantidades: dict, item: dict) -> None:
+    clave = _clave_del_item(item)
+    cantidades[clave] = cantidades.get(clave, 0) + item["quantity"]
 
 
 # --- Resumen para el cliente ------------------------------------------------------------------------------
@@ -998,6 +1152,9 @@ def calcular_y_preparar_pedido(
         items_solicitados: Los productos y cantidades que pidió el cliente, tal cual, sin agregar nada
             (ej: "2 Pizza Muzzarella, 1 Coca-Cola"). Si lo pedido arma una promoción vigente, el sistema la aplica
             solo: no pases la promo ni sus productos por tu cuenta, salvo que el cliente haya nombrado la promo.
+            Si el producto tiene variantes en el menú (ej. "Grande $16000 / Chica $14000", "Carne / Pollo"),
+            pasá la que eligió el cliente junto al nombre (ej: "1 Muzzarella Grande", "1 Milanesa Simple de Pollo");
+            si no dijo cuál, pasalo sin variante y el sistema te devuelve las opciones para preguntarle.
         customer_name: Nombre del cliente.
         customer_phone: Teléfono de contacto del cliente.
         shipping_address: Dirección de envío completa (solo para envíos a domicilio): calle, número y entre qué

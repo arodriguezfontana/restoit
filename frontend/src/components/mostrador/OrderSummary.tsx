@@ -6,6 +6,7 @@ import { MAX_QUANTITY_PER_ITEM, PAYMENT_METHOD_LABEL } from '@/types/order';
 import type { CartItem, PaymentMethod } from '@/types/order';
 import { formatCurrency } from '@/utils/currency';
 import { orderLineKey } from '@/hooks/useOrderLines';
+import { productDisplayName } from '@/utils/variants';
 
 interface SummaryLineProps {
   line: CartItem;
@@ -15,7 +16,7 @@ interface SummaryLineProps {
 
 function SummaryLine({ line, onQuantityChange, onRemove }: SummaryLineProps) {
   const isPromo = Boolean(line.promotion);
-  const name = line.promotion ? line.promotion.name : line.product.name;
+  const name = line.promotion ? line.promotion.name : productDisplayName(line.product);
   const price = line.promotion ? line.promotion.price : line.product.price;
   return (
     <tr

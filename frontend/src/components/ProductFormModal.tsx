@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import type { SubmitEvent } from 'react';
 import { AllowedExtrasField } from '@/components/AllowedExtrasField';
+import { VariantsField } from '@/components/VariantsField';
+import { toVariantDrafts, toVariants, variantsError } from '@/utils/variantDrafts';
+import type { VariantDraft } from '@/utils/variantDrafts';
 import { ImageChoiceField } from '@/components/ui/ImageChoiceField';
 import { Modal, ModalBody, ModalFooter } from '@/components/ui/Modal';
 import { useImageChoice } from '@/hooks/useImageChoice';
@@ -23,6 +26,8 @@ export function ProductFormModal({ product, categories, availableIngredients = [
   const [name, setName] = useState(product?.name ?? '');
   const [description, setDescription] = useState(product?.description ?? '');
   const [price, setPrice] = useState(product ? String(product.price) : '');
+  const [variants, setVariants] = useState<VariantDraft[]>(toVariantDrafts(product?.variants));
+  const hasVariants = variants.length > 0;
   const [categoryId, setCategoryId] = useState<number | null>(product?.category?.id ?? null);
   const [restrictions, setRestrictions] = useState(product?.dietary_restrictions.join(', ') ?? '');
   const [isActive, setIsActive] = useState(product?.is_active ?? true);
@@ -41,6 +46,7 @@ export function ProductFormModal({ product, categories, availableIngredients = [
     let error: string | null = null;
     if (!name.trim()) error = 'Ingresá el nombre del producto.';
     else if (!description.trim()) error = 'Ingresá la descripción del producto.';
+    else if (hasVariants) error = variantsError(variants);
     else if (price.trim() === '' || !Number.isFinite(parsedPrice) || parsedPrice <= 0) error = 'Ingresá un precio mayor a cero.';
     else if (categoryId === null) error = 'Elegí la categoría del producto.';
     setFormError(error);
@@ -51,7 +57,7 @@ export function ProductFormModal({ product, categories, availableIngredients = [
       const payload: ProductPayload = {
         name: name.trim(),
         description: description.trim(),
-        price: parsedPrice,
+        ...(hasVariants ? { variants: toVariants(variants) } : { price: parsedPrice, variants: [] }),
         category_id: categoryId,
         is_active: isActive,
         dietary_restrictions: parseRestrictions(restrictions),
@@ -108,21 +114,27 @@ export function ProductFormModal({ product, categories, availableIngredients = [
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label htmlFor="product-price" className={LABEL_CLASS}>
-                Precio *
+                Precio {hasVariants ? '' : '*'}
               </label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">$</span>
-                <input
-                  id="product-price"
-                  type="number"
-                  inputMode="decimal"
-                  min="0"
-                  step="0.01"
-                  value={price}
-                  onChange={(e) => setPrice(e.target.value)}
-                  className={`${INPUT_CLASS} pl-7`}
-                />
-              </div>
+              {hasVariants ? (
+                <p id="product-price" className="text-sm text-gray-500 py-2">
+                  Cada variante tiene su precio.
+                </p>
+              ) : (
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">$</span>
+                  <input
+                    id="product-price"
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="0.01"
+                    value={price}
+                    onChange={(e) => setPrice(e.target.value)}
+                    className={`${INPUT_CLASS} pl-7`}
+                  />
+                </div>
+              )}
             </div>
             <div>
               <label htmlFor="product-category" className={LABEL_CLASS}>
@@ -146,6 +158,8 @@ export function ProductFormModal({ product, categories, availableIngredients = [
               )}
             </div>
           </div>
+
+          <VariantsField drafts={variants} onChange={setVariants} />
 
           <div>
             <label htmlFor="product-restrictions" className={LABEL_CLASS}>

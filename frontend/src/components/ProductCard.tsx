@@ -4,10 +4,59 @@ import { useCart } from '@/hooks/useCart';
 import { ProductThumbnail } from '@/components/ProductThumbnail';
 import { formatCurrency } from '@/utils/currency';
 import { isPlainLineOf } from '@/utils/cart';
+import { productDisplayName, withVariant } from '@/utils/variants';
+
+/** Precio y botón para sumar al carrito un producto (o una de sus variantes, ya con su precio). */
+function AddToCartRow({ product, label }: { product: Product; label?: string }) {
+  const { items, addItem, updateQuantity } = useCart();
+  const cartItem = items.find((item) => isPlainLineOf(item, product.id, undefined, product.variant_name));
+  const name = productDisplayName(product);
+
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="font-semibold text-gray-900">
+        {label && <span className="font-medium text-gray-600 mr-2">{label}</span>}
+        {formatCurrency(product.price)}
+      </span>
+
+      {cartItem ? (
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => updateQuantity(cartItem.id ?? product.id, cartItem.quantity - 1)}
+            className="w-7 h-7 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition"
+            aria-label={`Quitar una unidad de ${name}`}
+          >
+            −
+          </button>
+          <span className="w-5 text-center text-sm font-medium">{cartItem.quantity}</span>
+          <button
+            type="button"
+            onClick={() => updateQuantity(cartItem.id ?? product.id, cartItem.quantity + 1)}
+            disabled={cartItem.quantity >= MAX_QUANTITY_PER_ITEM}
+            className="w-7 h-7 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition disabled:opacity-40 disabled:cursor-not-allowed"
+            aria-label={`Agregar una unidad de ${name}`}
+          >
+            +
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => addItem(product)}
+          style={{ backgroundColor: 'var(--primary-color, #18181b)' }}
+          className="text-white rounded-xl px-4 py-1.5 text-sm font-semibold hover:opacity-90 transition shadow-xs"
+          aria-label={label ? `Agregar ${name}` : undefined}
+        >
+          Agregar
+        </button>
+      )}
+    </div>
+  );
+}
 
 export function ProductCard({ product }: { product: Product }) {
-  const { items, addItem, updateQuantity } = useCart();
-  const cartItem = items.find((item) => isPlainLineOf(item, product.id, undefined));
+  const variants = product.variants ?? [];
 
   return (
     <div className="bg-white rounded-2xl shadow-md p-4 flex gap-4">
@@ -34,39 +83,13 @@ export function ProductCard({ product }: { product: Product }) {
           </div>
         )}
 
-        <div className="flex items-center justify-between mt-3">
-          <span className="font-semibold text-gray-900">{formatCurrency(product.price)}</span>
-
-          {cartItem ? (
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => updateQuantity(product.id, cartItem.quantity - 1)}
-                className="w-7 h-7 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition"
-                aria-label={`Quitar una unidad de ${product.name}`}
-              >
-                −
-              </button>
-              <span className="w-5 text-center text-sm font-medium">{cartItem.quantity}</span>
-              <button
-                type="button"
-                onClick={() => updateQuantity(product.id, cartItem.quantity + 1)}
-                disabled={cartItem.quantity >= MAX_QUANTITY_PER_ITEM}
-                className="w-7 h-7 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition disabled:opacity-40 disabled:cursor-not-allowed"
-                aria-label={`Agregar una unidad de ${product.name}`}
-              >
-                +
-              </button>
-            </div>
+        <div className="mt-3 space-y-2">
+          {variants.length > 0 ? (
+            variants.map((variant) => (
+              <AddToCartRow key={variant.name} product={withVariant(product, variant)} label={variant.name} />
+            ))
           ) : (
-            <button
-              type="button"
-              onClick={() => addItem(product)}
-              style={{ backgroundColor: 'var(--primary-color, #18181b)' }}
-              className="text-white rounded-xl px-4 py-1.5 text-sm font-semibold hover:opacity-90 transition shadow-xs"
-            >
-              Agregar
-            </button>
+            <AddToCartRow product={product} />
           )}
         </div>
       </div>

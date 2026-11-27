@@ -296,6 +296,25 @@ describe('ConfiguracionWebView', () => {
     expect(screen.getByRole('button', { name: 'Salón' })).toHaveAttribute('aria-pressed', 'true');
   });
 
+  describe('fondo del menú', () => {
+    it('se elige aparte del panel y se guarda con la configuración', async () => {
+      const user = userEvent.setup();
+      await renderEnPestana('Apariencia');
+      expect(screen.getByRole('button', { name: 'Menú: fondo liso' })).toHaveAttribute('aria-pressed', 'true');
+
+      fireEvent.change(screen.getByLabelText('Elegir color de fondo del menú'), { target: { value: '#1e3a8a' } });
+
+      expect(screen.getByRole('button', { name: 'Menú: color liso' })).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByRole('button', { name: 'Panel: fondo liso' })).toHaveAttribute('aria-pressed', 'true');
+      await user.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+      await waitFor(() =>
+        expect(storeConfigService.updateStoreConfig).toHaveBeenCalledWith(
+          expect.objectContaining({ menu_bg: 'color', menu_bg_color: '#1e3a8a', panel_bg: 'none' })
+        )
+      );
+    });
+  });
+
   describe('fondo del panel de administración', () => {
     it('arranca liso y se puede elegir una de las imágenes incluidas', async () => {
       const user = userEvent.setup();

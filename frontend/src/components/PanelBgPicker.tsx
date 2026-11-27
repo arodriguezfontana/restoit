@@ -14,6 +14,8 @@ interface PanelBgPickerProps {
   onImageChange: (image: string | null) => void;
   onColorChange: (color: string) => void;
   onError: (message: string | null) => void;
+  /** Qué fondo se está eligiendo; define los nombres accesibles. */
+  target?: 'panel' | 'menú';
 }
 
 const MAX_FILE_MB = 15;
@@ -34,7 +36,8 @@ function Check({ color }: { color: string }) {
 }
 
 /** Selector del fondo del panel de administración: liso, una imagen incluida o una propia. */
-export function PanelBgPicker({ value, image, color, accentColor, onChange, onImageChange, onColorChange, onError }: PanelBgPickerProps) {
+export function PanelBgPicker({ value, image, color, accentColor, onChange, onImageChange, onColorChange, onError, target = 'panel' }: PanelBgPickerProps) {
+  const Target = target === 'panel' ? 'Panel' : 'Menú';
   const fileInput = useRef<HTMLInputElement>(null);
   const colorInput = useRef<HTMLInputElement>(null);
 
@@ -71,7 +74,7 @@ export function PanelBgPicker({ value, image, color, accentColor, onChange, onIm
         type="button"
         onClick={() => onChange('none')}
         aria-pressed={value === 'none'}
-        aria-label="Panel: fondo liso"
+        aria-label={`${Target}: fondo liso`}
         className={`${cardClasses(value === 'none')} group`}
       >
         <div className="relative aspect-video w-full rounded-xl bg-gray-50 border border-gray-200 mb-2.5 flex items-center justify-center text-xs text-gray-400">
@@ -86,7 +89,7 @@ export function PanelBgPicker({ value, image, color, accentColor, onChange, onIm
         <input
           ref={colorInput}
           type="color"
-          aria-label="Elegir color de fondo del panel"
+          aria-label={`Elegir color de fondo del ${target}`}
           value={color ?? DEFAULT_PANEL_COLOR}
           onChange={(e) => {
             onColorChange(e.target.value);
@@ -98,7 +101,7 @@ export function PanelBgPicker({ value, image, color, accentColor, onChange, onIm
           type="button"
           onClick={() => (color ? onChange('color') : colorInput.current?.click())}
           aria-pressed={value === 'color'}
-          aria-label="Panel: color liso"
+          aria-label={`${Target}: color liso`}
           className="relative aspect-video w-full rounded-xl overflow-hidden border border-gray-200 mb-2.5"
           style={{
             background:
@@ -128,7 +131,7 @@ export function PanelBgPicker({ value, image, color, accentColor, onChange, onIm
           type="button"
           onClick={() => onChange(preset.id)}
           aria-pressed={value === preset.id}
-          aria-label={`Panel: ${preset.name}`}
+          aria-label={`${Target}: ${preset.name}`}
           className={`${cardClasses(value === preset.id)} group`}
         >
           <div className="relative aspect-video w-full rounded-xl overflow-hidden bg-gray-100 mb-2.5">
@@ -148,7 +151,7 @@ export function PanelBgPicker({ value, image, color, accentColor, onChange, onIm
           ref={fileInput}
           type="file"
           accept="image/*"
-          aria-label="Subir imagen de fondo del panel"
+          aria-label={`Subir imagen de fondo del ${target}`}
           className="hidden"
           onChange={handleFile}
         />
@@ -156,7 +159,7 @@ export function PanelBgPicker({ value, image, color, accentColor, onChange, onIm
           type="button"
           onClick={() => (image ? onChange('custom') : fileInput.current?.click())}
           aria-pressed={value === 'custom'}
-          aria-label="Panel: imagen propia"
+          aria-label={`${Target}: imagen propia`}
           className="group relative aspect-video w-full rounded-xl overflow-hidden bg-gray-100 mb-2.5"
         >
           {image ? (
@@ -183,7 +186,7 @@ export function PanelBgPicker({ value, image, color, accentColor, onChange, onIm
               <button
                 type="button"
                 onClick={removeImage}
-                aria-label="Quitar imagen propia del panel"
+                aria-label={`Quitar imagen propia del ${target}`}
                 className="text-[11px] font-semibold text-red-600 hover:text-red-700 underline"
               >
                 Quitar

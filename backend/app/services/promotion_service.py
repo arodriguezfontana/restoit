@@ -33,6 +33,7 @@ class PromotionItemInput(Protocol):
 
     product_id: int
     quantity: int
+    variant_name: str | None
 
 
 def _validate_items(db: Session, items: Sequence[PromotionItemInput]) -> list[tuple]:
@@ -46,7 +47,7 @@ def _validate_items(db: Session, items: Sequence[PromotionItemInput]) -> list[tu
         raise BusinessRuleError("Un producto figura más de una vez en la promoción.")
     if any(it.quantity < 1 for it in items):
         raise BusinessRuleError("Las cantidades de los productos deben ser mayores a cero.")
-    return [(products[it.product_id], it.quantity) for it in items]
+    return [(products[it.product_id], it.quantity, getattr(it, "variant_name", None)) for it in items]
 
 
 def create_promotion(

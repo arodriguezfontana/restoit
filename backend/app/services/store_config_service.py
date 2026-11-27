@@ -21,6 +21,9 @@ class StoreConfigChanges(Protocol):
     panel_bg: str
     panel_bg_image: str | None
     panel_bg_color: str | None
+    menu_bg: str
+    menu_bg_image: str | None
+    menu_bg_color: str | None
     cash_pin_enabled: bool
     cash_pin: str | None
     accepts_cash: bool
@@ -41,6 +44,7 @@ DEFAULT_STORE_CONFIG = {
     "theme_color": "black",
     "login_bg": "bistro",
     "panel_bg": "none",
+    "menu_bg": "none",
     "logo_url": None,
     "mp_alias": None,
     "cash_pin_enabled": False,
@@ -74,6 +78,9 @@ def update_store_config(db: Session, data: StoreConfigChanges) -> StoreConfig:
         config.panel_bg = data.panel_bg
         config.panel_bg_image = data.panel_bg_image
         config.panel_bg_color = data.panel_bg_color
+        config.menu_bg = data.menu_bg
+        config.menu_bg_image = data.menu_bg_image
+        config.menu_bg_color = data.menu_bg_color
         config.cash_pin_enabled = data.cash_pin_enabled
         config.cash_pin = data.cash_pin if data.cash_pin_enabled else None
         config.accepts_cash = data.accepts_cash

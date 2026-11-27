@@ -19,24 +19,26 @@ def get_or_create(db: Session, model, defaults: dict | None = None, **kwargs):
     return instance, True
 
 
+INGREDIENTES_DE_EJEMPLO = {
+    "Salsa de tomate": "gramos",
+    "Muzzarella": "gramos",
+    "Albahaca": "hojas",
+    "Tomate en rodajas": "gramos",
+    "Ajo": "gramos",
+    "Cebolla": "gramos",
+    "Jamón": "gramos",
+    "Morrones": "gramos",
+    "Longaniza calabresa": "gramos",
+    "Roquefort": "gramos",
+    "Aceitunas negras": "gramos",
+    "Panceta": "gramos",
+    "Huevo": "unidades",
+}
+
+
 def seed_ingredientes(db: Session) -> dict[str, Ingredient]:
-    unidades = {
-        "Salsa de tomate": "gramos",
-        "Muzzarella": "gramos",
-        "Albahaca": "hojas",
-        "Tomate en rodajas": "gramos",
-        "Ajo": "gramos",
-        "Cebolla": "gramos",
-        "Jamón": "gramos",
-        "Morrones": "gramos",
-        "Longaniza calabresa": "gramos",
-        "Roquefort": "gramos",
-        "Aceitunas negras": "gramos",
-        "Panceta": "gramos",
-        "Huevo": "unidades",
-    }
     ingredientes = {}
-    for nombre, unidad in unidades.items():
+    for nombre, unidad in INGREDIENTES_DE_EJEMPLO.items():
         ingrediente, _ = get_or_create(db, Ingredient, name=nombre, defaults={"unit": unidad})
         ingredientes[nombre] = ingrediente
     return ingredientes
@@ -153,13 +155,36 @@ def seed_pizzas(db: Session, categoria: Category, ingredientes: dict[str, Ingred
         _crear_producto_con_receta(db, categoria, ingredientes, datos)
 
 
+BEBIDAS = [
+    {"name": "Coca-Cola 500ml", "description": "Botella de 500ml.", "price": 2500.0, "preparation_time_minutes": 2},
+    {"name": "Agua Mineral 500ml", "description": "Sin gas o con gas.", "price": 1800.0, "preparation_time_minutes": 1},
+    {"name": "Cerveza Quilmes 1L", "description": "Botella retornable de 1 litro.", "price": 3200.0, "preparation_time_minutes": 2},
+]
+
+POSTRES = [
+    {
+        "name": "Flan casero",
+        "description": "Con dulce de leche y crema.",
+        "price": 3500.0,
+        "preparation_time_minutes": 5,
+        "dietary_restrictions": ["vegetariano"],
+    },
+    {
+        "name": "Helado 2 bochas",
+        "description": "A elección de sabores disponibles.",
+        "price": 4000.0,
+        "preparation_time_minutes": 5,
+        "dietary_restrictions": ["vegetariano"],
+    },
+]
+
+
+PRODUCTOS_DE_EJEMPLO = {datos["name"] for datos in (*PIZZAS, *BEBIDAS, *POSTRES)}
+CATEGORIAS_DE_EJEMPLO = {"Pizzas", "Bebidas", "Postres"}
+
+
 def seed_bebidas(db: Session, categoria: Category):
-    bebidas = [
-        {"name": "Coca-Cola 500ml", "description": "Botella de 500ml.", "price": 2500.0, "preparation_time_minutes": 2},
-        {"name": "Agua Mineral 500ml", "description": "Sin gas o con gas.", "price": 1800.0, "preparation_time_minutes": 1},
-        {"name": "Cerveza Quilmes 1L", "description": "Botella retornable de 1 litro.", "price": 3200.0, "preparation_time_minutes": 2},
-    ]
-    for datos in bebidas:
+    for datos in map(dict, BEBIDAS):
         nombre = datos.pop("name")
         get_or_create(
             db,
@@ -170,23 +195,7 @@ def seed_bebidas(db: Session, categoria: Category):
 
 
 def seed_postres(db: Session, categoria: Category):
-    postres = [
-        {
-            "name": "Flan casero",
-            "description": "Con dulce de leche y crema.",
-            "price": 3500.0,
-            "preparation_time_minutes": 5,
-            "dietary_restrictions": ["vegetariano"],
-        },
-        {
-            "name": "Helado 2 bochas",
-            "description": "A elección de sabores disponibles.",
-            "price": 4000.0,
-            "preparation_time_minutes": 5,
-            "dietary_restrictions": ["vegetariano"],
-        },
-    ]
-    for datos in postres:
+    for datos in map(dict, POSTRES):
         nombre = datos.pop("name")
         get_or_create(
             db,
@@ -228,6 +237,29 @@ def seed_store_config(db: Session) -> StoreConfig:
     return config
 
 
+def seed_menu_de_ejemplo(db: Session) -> None:
+    """Menú de ejemplo de una pizzería: categorías, ingredientes y productos."""
+    categoria_pizzas, _ = get_or_create(db, Category, name="Pizzas", defaults={"sector": "pizzeria"})
+    categoria_pizzas.sector = "pizzeria"
+    categoria_bebidas, _ = get_or_create(db, Category, name="Bebidas", defaults={"sector": "barra"})
+    categoria_bebidas.sector = "barra"
+    categoria_postres, _ = get_or_create(db, Category, name="Postres", defaults={"sector": "cocina"})
+    categoria_postres.sector = "cocina"
+    db.flush()
+
+    ingredientes = seed_ingredientes(db)
+    db.flush()
+
+    seed_pizzas(db, categoria_pizzas, ingredientes)
+    seed_bebidas(db, categoria_bebidas)
+    seed_postres(db, categoria_postres)
+
+
+def _hay_menu_propio(db: Session) -> bool:
+    """Si el local ya tiene productos que no son los del ejemplo (ej. su menú real): entonces no se carga el ejemplo."""
+    return db.query(Product).filter(Product.name.notin_(PRODUCTOS_DE_EJEMPLO)).first() is not None
+
+
 def run():
     db = SessionLocal()
     try:
@@ -235,20 +267,12 @@ def run():
         seed_store_config(db)
         db.flush()
 
-        categoria_pizzas, _ = get_or_create(db, Category, name="Pizzas", defaults={"sector": "pizzeria"})
-        categoria_pizzas.sector = "pizzeria"
-        categoria_bebidas, _ = get_or_create(db, Category, name="Bebidas", defaults={"sector": "barra"})
-        categoria_bebidas.sector = "barra"
-        categoria_postres, _ = get_or_create(db, Category, name="Postres", defaults={"sector": "cocina"})
-        categoria_postres.sector = "cocina"
-        db.flush()
-
-        ingredientes = seed_ingredientes(db)
-        db.flush()
-
-        seed_pizzas(db, categoria_pizzas, ingredientes)
-        seed_bebidas(db, categoria_bebidas)
-        seed_postres(db, categoria_postres)
+        # Se corre en cada deploy: una vez cargado el menú real del local, el de ejemplo no vuelve a aparecer.
+        if _hay_menu_propio(db):
+            db.commit()
+            print("Seed completado: admin y configuración (el local ya tiene su menú, no se carga el de ejemplo).")
+            return
+        seed_menu_de_ejemplo(db)
 
         db.commit()
         print("Seed completado: admin, configuración, categorías, ingredientes y productos de la pizzería cargados.")

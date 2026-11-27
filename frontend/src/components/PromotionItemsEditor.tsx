@@ -2,16 +2,23 @@ import { useState } from 'react';
 import { INPUT_FULL_CLASS as INPUT_CLASS } from '@/styles/forms';
 import type { AdminProduct } from '@/types/catalog';
 import { formatCurrency } from '@/utils/currency';
+import { withVariantSuffix } from '@/utils/variants';
+import { linePrice, optionsOf } from '@/utils/promotionLines';
+import type { PromotionLine } from '@/utils/promotionLines';
 
-export interface PromotionLine {
-  product_id: number;
-  quantity: number;
-}
-
-/** Suma las unidades a la línea de ese producto o, si no está, la agrega. */
-function withProduct(lines: PromotionLine[], productId: number, quantity: number): PromotionLine[] {
-  if (!lines.some((line) => line.product_id === productId)) return [...lines, { product_id: productId, quantity }];
-  return lines.map((line) => (line.product_id === productId ? { ...line, quantity: line.quantity + quantity } : line));
+/** Suma las unidades a la línea de ese producto o, si no está, la agrega. Un producto entra en una sola variante. */
+function withProduct(
+  lines: PromotionLine[],
+  productId: number,
+  quantity: number,
+  variantName: string | null
+): PromotionLine[] {
+  if (!lines.some((line) => line.product_id === productId)) {
+    return [...lines, { product_id: productId, quantity, variant_name: variantName }];
+  }
+  return lines.map((line) =>
+    line.product_id === productId ? { ...line, quantity: line.quantity + quantity, variant_name: variantName } : line
+  );
 }
 
 /** Cambia la cantidad de un producto; con cantidad cero el producto se quita. */
@@ -35,8 +42,10 @@ function LineRow({
   return (
     <li className="p-3 flex items-center justify-between text-sm">
       <div className="flex flex-col">
-        <span className="font-semibold text-gray-800">{product ? product.name : `Producto #${line.product_id}`}</span>
-        {product && <span className="text-xs text-gray-500">{formatCurrency(product.price)} c/u</span>}
+        <span className="font-semibold text-gray-800">
+          {product ? withVariantSuffix(product.name, line.variant_name) : `Producto #${line.product_id}`}
+        </span>
+        {product && <span className="text-xs text-gray-500">{formatCurrency(linePrice(line, product))} c/u</span>}
       </div>
       <div className="flex items-center gap-2">
         <div className="flex items-center border border-gray-200 rounded-lg bg-white overflow-hidden shadow-2xs">
@@ -77,14 +86,16 @@ interface PromotionItemsEditorProps {
 
 /** Los productos (y cantidades) que componen una promoción. */
 export function PromotionItemsEditor({ products, items, onChange }: PromotionItemsEditorProps) {
-  const [productToAdd, setProductToAdd] = useState<number | ''>('');
+  const [optionToAdd, setOptionToAdd] = useState<string>('');
   const [quantityToAdd, setQuantityToAdd] = useState<number>(1);
   const productById = new Map(products.map((product) => [product.id, product]));
+  const options = optionsOf(products);
 
   const handleAdd = () => {
-    if (productToAdd === '') return;
-    onChange(withProduct(items, Number(productToAdd), quantityToAdd));
-    setProductToAdd('');
+    const option = options.find((candidate) => candidate.key === optionToAdd);
+    if (!option) return;
+    onChange(withProduct(items, option.productId, quantityToAdd, option.variantName));
+    setOptionToAdd('');
     setQuantityToAdd(1);
   };
 
@@ -98,14 +109,14 @@ export function PromotionItemsEditor({ products, items, onChange }: PromotionIte
       <div className="flex flex-col sm:flex-row gap-2">
         <select
           aria-label="Producto a agregar"
-          value={productToAdd}
-          onChange={(e) => setProductToAdd(e.target.value === '' ? '' : Number(e.target.value))}
+          value={optionToAdd}
+          onChange={(e) => setOptionToAdd(e.target.value)}
           className={`flex-1 ${INPUT_CLASS} bg-white`}
         >
           <option value="">Seleccionar un producto del catálogo...</option>
-          {products.map((product) => (
-            <option key={product.id} value={product.id}>
-              {product.name} ({formatCurrency(product.price)})
+          {options.map((option) => (
+            <option key={option.key} value={option.key}>
+              {option.label} ({formatCurrency(option.price)})
             </option>
           ))}
         </select>
@@ -122,7 +133,7 @@ export function PromotionItemsEditor({ products, items, onChange }: PromotionIte
           <button
             type="button"
             onClick={handleAdd}
-            disabled={productToAdd === ''}
+            disabled={optionToAdd === ''}
             className="px-4 py-2 bg-gray-900 hover:bg-black disabled:opacity-40 text-white rounded-xl text-xs font-semibold transition"
           >
             Agregar

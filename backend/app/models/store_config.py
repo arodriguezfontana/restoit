@@ -27,6 +27,12 @@ class StoreConfig(Base):
     panel_bg_image: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Color (#rrggbb) que se usa como fondo del panel cuando panel_bg es "color".
     panel_bg_color: Mapped[str | None] = mapped_column(String(7), nullable=True)
+    # Fondo de la página pública /menu: mismas opciones que el del panel ("none", "color", imágenes incluidas o "custom").
+    menu_bg: Mapped[str] = mapped_column(String(50), nullable=False, default="none", server_default="none")
+    # Imagen propia (Data URL) que se usa como fondo del menú cuando menu_bg es "custom".
+    menu_bg_image: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Color (#rrggbb) que se usa como fondo del menú cuando menu_bg es "color".
+    menu_bg_color: Mapped[str | None] = mapped_column(String(7), nullable=True)
     # Links externos independientes para el menú y las promociones
     menu_link: Mapped[str | None] = mapped_column(Text, nullable=True)
     promotions_link: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -17,6 +17,25 @@ from app.services.channels.base import (
 logger = logging.getLogger(__name__)
 
 
+def _describir_error(error: Exception) -> str:
+    """Motivo de un fallo al llamar a Telegram, para el log, sin el token del bot.
+
+    El mensaje de httpx trae la URL completa, y en Telegram el token va dentro de la URL: no se usa tal cual.
+    Si Telegram respondió, se muestra el motivo que da él (ej. "bad webhook: An HTTPS URL must be provided").
+    """
+    if isinstance(error, httpx.HTTPStatusError):
+        try:
+            datos = error.response.json()
+        except ValueError:
+            datos = None
+        motivo = datos.get("description") if isinstance(datos, dict) else None
+        return f"{error.response.status_code}: {motivo or error.response.reason_phrase}"
+    texto = str(error)
+    if settings.TELEGRAM_TOKEN:
+        texto = texto.replace(settings.TELEGRAM_TOKEN, "<TELEGRAM_TOKEN>")
+    return f"{type(error).__name__}: {texto}"
+
+
 class TelegramChannel(CanalDeMensajeria):
     canal: ClassVar[Channel] = Channel.TELEGRAM
     # Telegram muestra "escribiendo..." durante 5 segundos o menos por aviso: se renueva con margen.
@@ -46,7 +65,7 @@ class TelegramChannel(CanalDeMensajeria):
             response = await self._cliente().post(url, json={"chat_id": destino, "text": texto})
             response.raise_for_status()
         except httpx.HTTPError as e:
-            logger.error("Error al enviar mensaje a Telegram: %s", e)
+            logger.error("Error al enviar mensaje a Telegram: %s", _describir_error(e))
 
     async def enviar_escribiendo(self, chat_id: str) -> None:
         if not settings.TELEGRAM_TOKEN:
@@ -62,7 +81,7 @@ class TelegramChannel(CanalDeMensajeria):
             )
             response.raise_for_status()
         except httpx.HTTPError as e:
-            logger.warning("No se pudo enviar el indicador de escritura a Telegram: %s", e)
+            logger.warning("No se pudo enviar el indicador de escritura a Telegram: %s", _describir_error(e))
 
     async def enviar_imagen(self, chat_id: str, imagen: ImagenParaEnviar, pie: str) -> bool:
         destino = self._destino(chat_id)
@@ -81,7 +100,7 @@ class TelegramChannel(CanalDeMensajeria):
             response.raise_for_status()
             return True
         except httpx.HTTPError as e:
-            logger.error("Error al enviar la imagen a Telegram: %s", e)
+            logger.error("Error al enviar la imagen a Telegram: %s", _describir_error(e))
             return False
 
     async def descargar_archivo(self, media_id: str) -> ArchivoRecibido | None:
@@ -99,7 +118,7 @@ class TelegramChannel(CanalDeMensajeria):
             archivo = await self._cliente().get(f"https://api.telegram.org/file/bot{settings.TELEGRAM_TOKEN}/{info['file_path']}")
             archivo.raise_for_status()
         except (httpx.HTTPError, KeyError, ValueError) as e:
-            logger.error("No se pudo descargar el archivo %s de Telegram: %s", media_id, e)
+            logger.error("No se pudo descargar el archivo %s de Telegram: %s", media_id, _describir_error(e))
             return None
         if len(archivo.content) > MAX_BYTES_ARCHIVO:
             return None
@@ -120,9 +139,8 @@ class TelegramChannel(CanalDeMensajeria):
 
         url = f"https://api.telegram.org/bot{settings.TELEGRAM_TOKEN}/setWebhook"
         try:
-            async with httpx.AsyncClient(timeout=10.0) as cliente:
-                response = await cliente.post(url, json=payload)
-                response.raise_for_status()
+            response = await self._cliente().post(url, json=payload, timeout=10.0)
+            response.raise_for_status()
             logger.info("Webhook de Telegram registrado en %s", webhook_url)
         except httpx.HTTPError as e:
-            logger.error("No se pudo registrar el webhook de Telegram: %s", e)
+            logger.error("No se pudo registrar el webhook de Telegram en %s: %s", webhook_url, _describir_error(e))

@@ -4,9 +4,12 @@ import type { CartItem, OrderItemModification } from '@/types/order';
 import { customizationOptionsOf } from '@/utils/cart';
 import { formatCurrency } from '@/utils/currency';
 import { cleanModTag } from '@/utils/modifications';
+import { productDisplayName } from '@/utils/variants';
 
 function displayNameOf(item: CartItem): string {
-  return item.custom_name ?? (item.promotion ? item.promotion.name : (item.product?.name ?? ''));
+  if (item.custom_name) return item.custom_name;
+  if (item.promotion) return item.promotion.name;
+  return item.product ? productDisplayName(item.product) : '';
 }
 
 function unitPriceOf(item: CartItem): number {

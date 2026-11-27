@@ -48,7 +48,11 @@ export function buildCounterOrderPayload(form: CounterOrderForm, lines: CartItem
     items: lines.map((line) =>
       line.promotion
         ? { promotion_id: line.promotion.id, quantity: line.quantity }
-        : { product_id: line.product.id, quantity: line.quantity }
+        : {
+            product_id: line.product.id,
+            quantity: line.quantity,
+            ...(line.product.variant_name ? { variant: line.product.variant_name } : {}),
+          }
     ),
   };
 }

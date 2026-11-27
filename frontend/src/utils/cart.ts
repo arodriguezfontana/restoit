@@ -8,8 +8,14 @@ const sameName = (a: string, b: string): boolean => a.toLowerCase() === b.toLowe
 export function lineKeyOf(item: CartItem): string {
   if (item.id) return item.id;
   if (item.promotion) return `promo-${item.promotion.id}`;
-  return item.secondary_product ? `${item.product?.id}-${item.secondary_product.id}` : `${item.product?.id}`;
+  const variant = item.product?.variant_name ? `-${item.product.variant_name}` : '';
+  return item.secondary_product
+    ? `${item.product?.id}-${item.secondary_product.id}${variant}`
+    : `${item.product?.id}${variant}`;
 }
+
+const sameVariant = (a: string | undefined, b: string | undefined): boolean =>
+  (a ?? '').toLowerCase() === (b ?? '').toLowerCase();
 
 /** Precio de una unidad sin modificaciones: el del gusto más caro en una pizza mitad y mitad, o el de la promo. */
 export function basePriceOf(item: CartItem): number {
@@ -22,11 +28,18 @@ export function withMoreUnits(item: CartItem, quantity: number): CartItem {
   return { ...item, quantity: Math.min(item.quantity + quantity, MAX_QUANTITY_PER_ITEM) };
 }
 
-/** Línea de ese producto (y ese segundo gusto, si es una mitad y mitad) sin ninguna modificación. */
-export function isPlainLineOf(item: CartItem, productId: number, secondaryProductId?: number): boolean {
+/** Línea de ese producto (y ese segundo gusto, si es una mitad y mitad), en esa variante, sin ninguna modificación. */
+export function isPlainLineOf(
+  item: CartItem,
+  productId: number,
+  secondaryProductId?: number,
+  variantName?: string
+): boolean {
   return (
+    !item.promotion &&
     item.product.id === productId &&
     item.secondary_product?.id === secondaryProductId &&
+    sameVariant(item.product.variant_name, variantName) &&
     (!item.modifications || item.modifications.length === 0)
   );
 }

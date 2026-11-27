@@ -23,6 +23,8 @@ class ProductData:
     is_active: bool
     dietary_restrictions: list[str]
     allowed_extra_ids: tuple[int, ...] = ()
+    # (nombre, precio) de cada variante, en el orden en que se ofrecen. Vacío: el producto tiene un solo precio.
+    variants: tuple[tuple[str, float], ...] = ()
 
 
 # --- Consultas ----------------------------------------------------------------------------------------
@@ -81,14 +83,17 @@ def _apply(db: Session, product: Product, data: ProductData) -> None:
     category = category_repository.get(db, data.category_id)
     if category is None:
         raise ConflictError("La categoría elegida no existe. Actualizá la página e intentá nuevamente.")
+    variants = list(data.variants or ())
     product.update_details(
         name=data.name,
         description=data.description,
-        price=data.price,
+        # Con variantes el precio del producto sale de ellas (ver Product.replace_variants).
+        price=min(price for _, price in variants) if variants else data.price,
         category=category,
         is_active=data.is_active,
         dietary_restrictions=data.dietary_restrictions,
     )
+    product.replace_variants(variants)
     if hasattr(data, "allowed_extra_ids") and data.allowed_extra_ids is not None:
         from app.repositories import ingredient_repository
         allowed_ings = ingredient_repository.get_many(db, set(data.allowed_extra_ids))

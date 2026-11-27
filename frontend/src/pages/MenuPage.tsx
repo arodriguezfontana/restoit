@@ -24,6 +24,7 @@ import { useStoreConfig } from '@/hooks/useStoreConfig';
 import { groupByCategory } from '@/utils/productGrouping';
 import { clearPendingPaymentOrder, loadPendingPaymentOrder, savePendingPaymentOrder } from '@/utils/pendingPayment';
 import { groupWeeklySchedule } from '@/utils/businessHours';
+import { menuBackground } from '@/utils/panelBackground';
 import { getThemeOption } from '@/types/storeConfig';
 import type { CheckoutFormData, Product, WebOrderCreated } from '@/types/order';
 
@@ -142,6 +143,7 @@ export default function MenuPage() {
   };
 
   const currentTheme = getThemeOption(storeConfig?.theme_color);
+  const background = menuBackground(storeConfig);
 
   const handleOrderCreated = (order: WebOrderCreated, form: CheckoutFormData) => {
     // Con MercadoPago se sale de la página a pagar: se guarda el pedido para mostrarlo al volver.
@@ -159,7 +161,16 @@ export default function MenuPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="relative isolate min-h-screen bg-gray-50 flex flex-col">
+      {background && (
+        // Capa fija detrás de todo; las fotos se agrandan un poco para que el desenfoque no deje bordes claros.
+        <div
+          data-testid="menu-page-bg"
+          aria-hidden="true"
+          className={`fixed inset-0 -z-10 bg-cover bg-center ${background.blurred ? 'scale-110 blur-md' : ''}`}
+          style={{ backgroundImage: background.css }}
+        />
+      )}
       <TopBar
         title={storeConfig?.store_name}
         logoUrl={storeConfig?.logo_url}

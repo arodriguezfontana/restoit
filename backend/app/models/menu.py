@@ -14,6 +14,7 @@ from sqlalchemy import (
     LargeBinary,
     String,
     Text,
+    UniqueConstraint,
     and_,
 )
 from sqlalchemy.ext.hybrid import hybrid_property
@@ -43,6 +44,38 @@ class InvalidRecipeError(BusinessRuleError):
 
 class IngredientInUseError(ConflictError):
     pass
+
+
+class InvalidVariantError(BusinessRuleError):
+    pass
+
+
+MAX_VARIANT_NAME_LENGTH = 50
+
+
+class ProductVariant(Base):
+    """Opción de un producto con su propio precio: un tamaño (Grande, Chica) o una versión (Carne, Pollo).
+
+    Un producto con variantes se pide siempre eligiendo una, y se cobra el precio de esa variante.
+    """
+
+    __tablename__ = "product_variants"
+    __table_args__ = (
+        UniqueConstraint("product_id", "name", name="uq_product_variants_product_name"),
+        CheckConstraint("price > 0", name="ck_product_variants_price"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    product_id: Mapped[int] = mapped_column(Integer, ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(MAX_VARIANT_NAME_LENGTH), nullable=False)
+    price: Mapped[Decimal] = mapped_column(MoneyColumn, nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+
+    product: Mapped["Product"] = relationship("Product", back_populates="variants")
+
+    @validates("price")
+    def _as_money(self, _key: str, value) -> Decimal:
+        return to_money(value)
 
 
 class ProductIngredient(Base):
@@ -152,6 +185,14 @@ class Product(Base):
     recipe_items: Mapped[list["ProductIngredient"]] = relationship("ProductIngredient", back_populates="product", cascade="all, delete-orphan")
     allowed_extra_items: Mapped[list["ProductAllowedExtra"]] = relationship("ProductAllowedExtra", back_populates="product", cascade="all, delete-orphan")
     image: Mapped["ProductImage | None"] = relationship("ProductImage", back_populates="product", uselist=False, cascade="all, delete-orphan")
+    # Siempre se cargan junto con el producto: el precio de lo que se pide depende de ellas.
+    variants: Mapped[list["ProductVariant"]] = relationship(
+        "ProductVariant",
+        back_populates="product",
+        cascade="all, delete-orphan",
+        order_by="ProductVariant.position",
+        lazy="selectin",
+    )
 
     @property
     def effective_sector(self) -> str:
@@ -194,6 +235,83 @@ class Product(Base):
         self.category_id = category.id
         self.is_active = is_active
         self.dietary_restrictions = dietary_restrictions
+
+    # --- Variantes ----------------------------------------------------------------------------------
+
+    @property
+    def has_variants(self) -> bool:
+        return bool(self.variants)
+
+    def variant_named(self, name: str | None) -> ProductVariant | None:
+        """La variante con ese nombre (sin distinguir mayúsculas ni espacios alrededor), o None."""
+        wanted = (name or "").strip().lower()
+        if not wanted:
+            return None
+        return next((variant for variant in self.variants if variant.name.strip().lower() == wanted), None)
+
+    def describe_variants(self) -> str:
+        """Las variantes con su precio para mostrarle al cliente: 'Grande ($16.000,00) o Chica ($14.000,00)'."""
+        options = [f"{variant.name} (${variant.price:,.2f})" for variant in self.variants]
+        return " o ".join([", ".join(options[:-1]), options[-1]]) if len(options) > 1 else "".join(options)
+
+    def price_for(self, variant_name: str | None) -> Decimal:
+        """Precio de una unidad del producto en la variante pedida.
+
+        Un producto con variantes exige una de las suyas; uno sin variantes tiene un único precio.
+        """
+        if not self.has_variants:
+            return self.price
+        variant = self.variant_named(variant_name)
+        if variant is None:
+            if variant_name and variant_name.strip():
+                raise InvalidVariantError(
+                    f"'{self.name}' no viene en '{variant_name.strip()}'. Las opciones son: {self.describe_variants()}."
+                )
+            raise InvalidVariantError(f"Elegí una opción de '{self.name}': {self.describe_variants()}.")
+        return variant.price
+
+    def normalized_variant_name(self, variant_name: str | None) -> str | None:
+        """El nombre de la variante tal como está cargado (o None si el producto no tiene variantes)."""
+        if not self.has_variants:
+            return None
+        variant = self.variant_named(variant_name)
+        return variant.name if variant else None
+
+    def replace_variants(self, variants: list[tuple[str, Decimal | float]]) -> None:
+        """Reemplaza las variantes (nombre, precio), en ese orden. Sin variantes, el producto tiene un solo precio.
+
+        Con variantes, el precio del producto pasa a ser el de la más barata: es el "desde" que se muestra al listarlo.
+        """
+        cleaned = [(name.strip(), to_money(price)) for name, price in variants]
+        if any(not name for name, _ in cleaned):
+            raise InvalidVariantError("Cada variante tiene que tener un nombre.")
+        if any(len(name) > MAX_VARIANT_NAME_LENGTH for name, _ in cleaned):
+            raise InvalidVariantError(f"El nombre de una variante puede tener hasta {MAX_VARIANT_NAME_LENGTH} caracteres.")
+        if any(price <= 0 for _, price in cleaned):
+            raise InvalidVariantError("El precio de cada variante tiene que ser mayor a cero.")
+        names = [name.lower() for name, _ in cleaned]
+        if len(names) != len(set(names)):
+            raise InvalidVariantError("Hay dos variantes con el mismo nombre.")
+
+        # Se actualizan las que ya existen (mismo nombre) para no romper la restricción de nombre único al guardar.
+        current = {variant.name.strip().lower(): variant for variant in self.variants}
+        new_variants = []
+        for position, (name, price) in enumerate(cleaned):
+            variant = current.get(name.lower()) or ProductVariant()
+            variant.name = name
+            variant.price = price
+            variant.position = position
+            new_variants.append(variant)
+        self.variants = new_variants
+        if cleaned:
+            self.price = min(price for _, price in cleaned)
+
+    def scale_prices(self, factor: Decimal | float) -> None:
+        """Multiplica el precio (y el de cada variante) por el factor, redondeando a centavos."""
+        factor = Decimal(str(factor))
+        self.price = to_money(Decimal(self.price) * factor)
+        for variant in self.variants:
+            variant.price = to_money(Decimal(variant.price) * factor)
 
     # --- Imagen -------------------------------------------------------------------------------------
 

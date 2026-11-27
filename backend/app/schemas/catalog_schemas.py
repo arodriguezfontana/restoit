@@ -1,13 +1,23 @@
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.models.menu import Category, Product
+from app.models.menu import MAX_VARIANT_NAME_LENGTH, Category, Product
 from app.schemas.ingredient_schemas import RecipeItemResponse
-from app.schemas.menu_schemas import CategoryResponse, product_image_url
+from app.schemas.menu_schemas import CategoryResponse, VariantResponse, product_image_url
 from app.services.catalog_service import ProductData
 
 MAX_PRICE = 10_000_000
+MAX_VARIANTS = 10
 MAX_DIETARY_RESTRICTIONS = 10
 MAX_CATEGORY_PRODUCTS = 500
+
+
+class VariantPayload(BaseModel):
+    """Una opción del producto con su precio (ej. Grande $16000)."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    name: str = Field(..., min_length=1, max_length=MAX_VARIANT_NAME_LENGTH)
+    price: float = Field(..., gt=0, le=MAX_PRICE)
 
 
 class ProductPayload(BaseModel):
@@ -17,7 +27,13 @@ class ProductPayload(BaseModel):
 
     name: str = Field(..., min_length=1, max_length=150)
     description: str = Field(..., min_length=1, max_length=1000)
-    price: float = Field(..., gt=0, le=MAX_PRICE)
+    # Con variantes no hace falta: el precio del producto es el de la variante más barata.
+    price: float | None = Field(None, gt=0, le=MAX_PRICE)
+    variants: list[VariantPayload] = Field(
+        default_factory=list,
+        max_length=MAX_VARIANTS,
+        description="Opciones del producto con su precio (ej. Grande y Chica). Vacío: un solo precio.",
+    )
     category_id: int = Field(..., gt=0)
     is_active: bool = Field(True, description="Si está disponible para pedir.")
     dietary_restrictions: list[str] = Field(default_factory=list, max_length=MAX_DIETARY_RESTRICTIONS)
@@ -35,8 +51,22 @@ class ProductPayload(BaseModel):
             primera_de_cada_una.setdefault(restriccion.lower(), restriccion)
         return list(primera_de_cada_una.values())
 
+    @model_validator(mode="after")
+    def _precio_o_variantes(self) -> "ProductPayload":
+        if self.price is None and not self.variants:
+            raise ValueError("Indicá el precio del producto o cargale variantes con su precio.")
+        nombres = [variant.name.lower() for variant in self.variants]
+        if len(nombres) != len(set(nombres)):
+            raise ValueError("Hay dos variantes con el mismo nombre.")
+        return self
+
     def to_data(self) -> ProductData:
-        return ProductData(**self.model_dump())
+        data = self.model_dump(exclude={"variants", "price"})
+        return ProductData(
+            **data,
+            price=self.price if self.price is not None else min(variant.price for variant in self.variants),
+            variants=tuple((variant.name, variant.price) for variant in self.variants),
+        )
 
 
 class IngredientExtraResponse(BaseModel):
@@ -60,6 +90,7 @@ class AdminProductResponse(BaseModel):
     image_url: str | None
     recipe: list[RecipeItemResponse]
     allowed_extras: list[IngredientExtraResponse] = Field(default_factory=list)
+    variants: list[VariantResponse] = Field(default_factory=list)
 
     @classmethod
     def from_model(cls, product: Product) -> "AdminProductResponse":
@@ -68,6 +99,7 @@ class AdminProductResponse(BaseModel):
             name=product.name,
             description=product.description,
             price=float(product.price),
+            variants=VariantResponse.of(product),
             is_active=product.is_active,
             dietary_restrictions=product.dietary_restrictions or [],
             category=CategoryResponse.model_validate(product.category) if product.category else None,

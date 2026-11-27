@@ -54,7 +54,8 @@ class OrderRequest:
     delivery_method: DeliveryMethod | str
     shipping_address: str | None
     notes: str | None
-    # (product_id, cantidad) o (product_id, cantidad, secondary_product_id, custom_name, mods, promotion_id).
+    # (product_id, cantidad) o (product_id, cantidad, secondary_product_id, custom_name, mods, promotion_id,
+    # variante).
     items: list[tuple]
 
 
@@ -121,7 +122,7 @@ def validate_schedule(db: Session, requested: datetime, now: datetime, tolerance
 
 def _ids_referenced_by(item: tuple) -> tuple[set[int], set[int]]:
     """(ids de productos, ids de promociones) a los que se refiere el ítem."""
-    product_id, _, secondary_id, _, _, promotion_id = complete_line(item)
+    product_id, _, secondary_id, _, _, promotion_id, _ = complete_line(item)
     if promotion_id is not None:
         return set(), {promotion_id}
     if product_id is None:
@@ -140,17 +141,17 @@ def _collect_referenced_ids(items: list[tuple]) -> tuple[set[int], set[int]]:
 
 def _line_with_objects(item: tuple, products: dict, promotions: dict) -> tuple:
     """El ítem con los productos y la promoción en lugar de sus ids."""
-    product_id, quantity, secondary_id, custom_name, mods, promotion_id = complete_line(item)
+    product_id, quantity, secondary_id, custom_name, mods, promotion_id, variant = complete_line(item)
     if promotion_id is not None:
         promotion = promotions[promotion_id]
-        return None, quantity, None, custom_name or promotion.name, mods, promotion
+        return None, quantity, None, custom_name or promotion.name, mods, promotion, None
     secondary_product = products[secondary_id] if secondary_id is not None else None
-    return products[product_id], quantity, secondary_product, custom_name, mods, None
+    return products[product_id], quantity, secondary_product, custom_name, mods, None, variant
 
 
 def _products_for(
     db: Session, items: list[tuple]
-) -> list[tuple[Any, int, Any, str | None, list[dict], Any]]:
+) -> list[tuple[Any, int, Any, str | None, list[dict], Any, str | None]]:
     product_ids, promotion_ids = _collect_referenced_ids(items)
 
     products = product_repository.get_many(db, product_ids) if product_ids else {}
@@ -172,7 +173,7 @@ def _promotion_products(promotion: Any) -> list[Any]:
 
 def _ingredient_ids_of_line(line: tuple) -> set[int]:
     """Ingredientes de las recetas de lo que lleva la línea (sus productos o los de su promoción)."""
-    product, _, secondary_product, _, _, promotion = complete_line(line)
+    product, _, secondary_product, _, _, promotion, _ = complete_line(line)
     direct_products = [p for p in (product, secondary_product) if p is not None]
     return {
         recipe_item.ingredient_id
@@ -214,11 +215,11 @@ def _modifiers_from_notes(db: Session, notes: str) -> list[dict]:
 
 def _line_with_valid_modifiers(line: tuple, extra_modifiers: list[dict]) -> tuple:
     """La línea con sus modificaciones más las indicadas, quedándose con las que valen para su producto."""
-    product, quantity, secondary_product, custom_name, modifiers, promotion = complete_line(line)
+    product, quantity, secondary_product, custom_name, modifiers, promotion, variant = complete_line(line)
     modifiers = modifiers + extra_modifiers
     if product is not None:
         modifiers = filtrar_modificadores_para_producto(modifiers, product, secondary_product)
-    return product, quantity, secondary_product, custom_name, modifiers, promotion
+    return product, quantity, secondary_product, custom_name, modifiers, promotion, variant
 
 
 def _attach_notes_modifiers(db: Session, notes: str | None, parsed_items: list[tuple]) -> list[tuple]:

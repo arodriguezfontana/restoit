@@ -8,6 +8,7 @@ from app.core.payments import mercadopago_configured
 THEME_COLOR_PATTERN = r"^(black|red|blue|emerald|orange|#[0-9a-fA-F]{6})$"
 LOGIN_BG_PATTERN = r"^(bistro|kitchen|trattoria|custom)$"
 PANEL_BG_PATTERN = r"^(none|color|bistro|kitchen|trattoria|custom)$"
+MENU_BG_PATTERN = PANEL_BG_PATTERN
 CARD_APPLIES_TO_PATTERN = r"^(pickup|delivery|both)$"
 # Una imagen de fondo ya redimensionada por el navegador pesa bastante menos; esto solo evita abusos.
 LOGIN_BG_IMAGE_MAX_LENGTH = 4_000_000
@@ -25,6 +26,9 @@ class StoreConfigResponse(BaseModel):
     panel_bg: str = "none"
     panel_bg_image: str | None = None
     panel_bg_color: str | None = None
+    menu_bg: str = "none"
+    menu_bg_image: str | None = None
+    menu_bg_color: str | None = None
     menu_link: str | None = None
     promotions_link: str | None = None
     mp_alias: str | None = None
@@ -71,6 +75,16 @@ class StoreConfigUpdate(BaseModel):
     )
     panel_bg_color: str | None = Field(
         None, pattern=r"^#[0-9a-fA-F]{6}$", description="Color del fondo del panel, en formato #rrggbb"
+    )
+    menu_bg: str = Field("none", pattern=MENU_BG_PATTERN, description="Fondo de la página pública del menú")
+    menu_bg_image: str | None = Field(
+        None,
+        max_length=LOGIN_BG_IMAGE_MAX_LENGTH,
+        pattern=r"^data:image/",
+        description="Imagen propia para el fondo del menú, en formato Data URL",
+    )
+    menu_bg_color: str | None = Field(
+        None, pattern=r"^#[0-9a-fA-F]{6}$", description="Color del fondo del menú, en formato #rrggbb"
     )
     menu_link: str | None = Field(None, description="Link externo a la carta o menú del local")
     promotions_link: str | None = Field(None, description="Link externo a las promociones del local")
@@ -121,6 +135,18 @@ class StoreConfigUpdate(BaseModel):
     def color_panel_bg_requires_color(self) -> "StoreConfigUpdate":
         if self.panel_bg == "color" and not self.panel_bg_color:
             raise ValueError("Para usar un color de fondo en el panel hay que elegir el color.")
+        return self
+
+    @model_validator(mode="after")
+    def custom_menu_bg_requires_image(self) -> "StoreConfigUpdate":
+        if self.menu_bg == "custom" and not self.menu_bg_image:
+            raise ValueError("Para usar un fondo propio en el menú hay que subir una imagen.")
+        return self
+
+    @model_validator(mode="after")
+    def color_menu_bg_requires_color(self) -> "StoreConfigUpdate":
+        if self.menu_bg == "color" and not self.menu_bg_color:
+            raise ValueError("Para usar un color de fondo en el menú hay que elegir el color.")
         return self
 
     @model_validator(mode="after")

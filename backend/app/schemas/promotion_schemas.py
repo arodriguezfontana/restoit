@@ -8,12 +8,16 @@ from app.models.promotion import MAX_PROMOTION_IMAGES, Promotion, PromotionImage
 class PromotionItemPayload(BaseModel):
     product_id: int = Field(..., description="ID del producto incluido")
     quantity: int = Field(1, ge=1, description="Cantidad del producto incluida en la promo")
+    variant_name: str | None = Field(
+        None, max_length=50, description="Variante incluida, si el producto tiene variantes (ej. 'Grande')"
+    )
 
 
 class PromotionItemResponse(BaseModel):
     product_id: int
     product_name: str
     quantity: int
+    variant_name: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -73,6 +77,7 @@ class PromotionResponse(BaseModel):
                     product_id=it.product_id,
                     product_name=it.product.name if it.product else f"Producto #{it.product_id}",
                     quantity=it.quantity,
+                    variant_name=it.variant_name,
                 )
                 for it in promo.items
             ],

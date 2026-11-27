@@ -31,9 +31,22 @@ class PromotionProduct(Base):
     promotion_id: Mapped[int] = mapped_column(Integer, ForeignKey("promotions.id", ondelete="CASCADE"), primary_key=True)
     product_id: Mapped[int] = mapped_column(Integer, ForeignKey("products.id", ondelete="CASCADE"), primary_key=True)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    # Variante incluida de un producto que las tiene (ej. "Grande"); vacía si el producto no tiene variantes.
+    variant_name: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     promotion: Mapped["Promotion"] = relationship("Promotion", back_populates="items")
     product: Mapped["Product"] = relationship("Product")
+
+    @property
+    def display_name(self) -> str:
+        """El producto con su variante, como se muestra en la comanda (ej. 'Muzzarella (Grande)')."""
+        name = self.product.name if self.product else ""
+        return f"{name} ({self.variant_name})" if self.variant_name else name
+
+    @property
+    def regular_price(self) -> Decimal:
+        """Lo que costaría la unidad de este producto fuera de la promoción."""
+        return self.product.price_for(self.variant_name) if self.product.has_variants else self.product.price
 
 
 class Promotion(Base):
@@ -91,16 +104,34 @@ class Promotion(Base):
             return False
         return all(item.product is not None and item.product.is_available for item in self.items)
 
-    def set_products(self, items: list[tuple[Product, int]]) -> None:
-        """Define los productos incluidos en la promoción con sus cantidades."""
+    def set_products(self, items: list[tuple]) -> None:
+        """Define los productos incluidos en la promoción: (producto, cantidad[, variante]).
+
+        Un producto con variantes tiene que indicar cuál entra en la promoción (ej. Muzzarella Grande).
+        """
         if not items:
             raise BusinessRuleError("La promoción debe incluir al menos un producto.")
-        if any(quantity < 1 for _, quantity in items):
+        lines = [(item[0], item[1], item[2] if len(item) > 2 else None) for item in items]
+        if any(quantity < 1 for _, quantity, _ in lines):
             raise BusinessRuleError("La cantidad de cada producto debe ser mayor a cero.")
-        product_ids = [product.id for product, _ in items]
+        product_ids = [product.id for product, _, _ in lines]
         if len(product_ids) != len(set(product_ids)):
             raise BusinessRuleError("Un producto figura más de una vez en la promoción.")
-        self.items = [PromotionProduct(product=product, quantity=quantity) for product, quantity in items]
+        self.items = [
+            PromotionProduct(product=product, quantity=quantity, variant_name=self._variant_for(product, variant))
+            for product, quantity, variant in lines
+        ]
+
+    @staticmethod
+    def _variant_for(product: Product, variant: str | None) -> str | None:
+        if not product.has_variants:
+            return None
+        chosen = product.variant_named(variant)
+        if chosen is None:
+            raise BusinessRuleError(
+                f"Indicá qué variante de '{product.name}' incluye la promoción: {product.describe_variants()}."
+            )
+        return chosen.name
 
 
 class PromotionImage(Base):

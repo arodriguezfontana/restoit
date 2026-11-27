@@ -3,6 +3,7 @@ import { CashPinSection } from '@/components/configuracion/CashPinSection';
 import { CouponsSection } from '@/components/configuracion/CouponsSection';
 import { DelaySettingsSection } from '@/components/configuracion/DelaySettingsSection';
 import { LoginBackgroundSection } from '@/components/configuracion/LoginBackgroundSection';
+import { MenuBackgroundSection } from '@/components/configuracion/MenuBackgroundSection';
 import { LogoSection } from '@/components/configuracion/LogoSection';
 import { PaymentMethodsSection } from '@/components/configuracion/PaymentMethodsSection';
 import { PanelBackgroundSection } from '@/components/configuracion/PanelBackgroundSection';
@@ -26,7 +27,7 @@ const TABS: { id: ConfigTab; label: string; description: string }[] = [
   { id: 'demoras', label: 'Demoras', description: 'Cómo se calcula la demora de los pedidos.' },
   { id: 'cupones', label: 'Cupones', description: 'Cupones de descuento exclusivos para la web.' },
   { id: 'pagos', label: 'Medios de pago', description: 'Cómo cobra el local.' },
-  { id: 'apariencia', label: 'Apariencia', description: 'Colores y fondos del panel y del login.' },
+  { id: 'apariencia', label: 'Apariencia', description: 'Colores y fondos del panel, el menú y el login.' },
   { id: 'seguridad', label: 'Seguridad', description: 'PIN de la caja.' },
 ];
 
@@ -133,6 +134,16 @@ export function ConfiguracionWebView({ onConfigUpdated }: ConfiguracionWebViewPr
                   setPanelBgImage={form.setPanelBgImage}
                   panelBgColor={form.panelBgColor}
                   setPanelBgColor={form.setPanelBgColor}
+                  currentTheme={currentTheme}
+                  onError={(message) => form.setFeedback(message ? { type: 'error', message } : null)}
+                />
+                <MenuBackgroundSection
+                  menuBg={form.menuBg}
+                  setMenuBg={form.setMenuBg}
+                  menuBgImage={form.menuBgImage}
+                  setMenuBgImage={form.setMenuBgImage}
+                  menuBgColor={form.menuBgColor}
+                  setMenuBgColor={form.setMenuBgColor}
                   currentTheme={currentTheme}
                   onError={(message) => form.setFeedback(message ? { type: 'error', message } : null)}
                 />
