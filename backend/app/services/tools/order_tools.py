@@ -26,6 +26,7 @@ from app.models.menu import InvalidVariantError, Product
 from app.models.order import (
     MAX_QUANTITY_PER_ITEM,
     PICKUP_ADDRESS,
+    BusinessRuleError,
     DeliveryMethod,
     InvalidOrderError,
     PaymentMethod,
@@ -36,7 +37,7 @@ from app.models.order import (
 from app.models.promotion import Promotion
 from app.repositories import promotion_repository
 from app.schemas.common import PHONE_PATTERN
-from app.services import printer_service
+from app.services import coupon_service, printer_service
 from app.services.business_hours_service import (
     DIAS_SEMANA,
     Franja,
@@ -1075,24 +1076,64 @@ def _datos_faltantes(
     return faltantes
 
 
-def _texto_con_datos_faltantes(resueltos: ItemsResueltos, faltantes: list[str], aviso_horario: str | None) -> str:
+def _bloque_de_totales(
+    total_base: Decimal,
+    cupon_aplicado: str | None = None,
+    cupon_pct: int | None = None,
+    cupon_ahorro: Decimal | None = None,
+    total_final: Decimal | None = None,
+    con_icono: bool = True,
+) -> list[str]:
+    icono = "💰 " if con_icono else ""
+    if cupon_aplicado and cupon_pct is not None and cupon_ahorro is not None and total_final is not None:
+        return [
+            f"Subtotal: ${total_base:,.2f}",
+            f"Descuento cupón ({cupon_aplicado} - {cupon_pct}% OFF): -${cupon_ahorro:,.2f}",
+            f"{icono}Total: ${total_final:,.2f}",
+        ]
+    return [f"{icono}Total: ${total_base:,.2f}"]
+
+
+def _texto_con_datos_faltantes(
+    resueltos: ItemsResueltos,
+    faltantes: list[str],
+    aviso_horario: str | None,
+    cupon_aplicado: str | None = None,
+    cupon_pct: int | None = None,
+    cupon_ahorro: Decimal | None = None,
+    total_final: Decimal | None = None,
+) -> str:
+    lineas_totales = _bloque_de_totales(
+        resueltos.total, cupon_aplicado, cupon_pct, cupon_ahorro, total_final, con_icono=False
+    )
     texto = (
         "Detalle de tu pedido:\n"
         + "\n".join(_bloque_de_productos(resueltos))
-        + f"\n\nTotal: ${resueltos.total:,.2f}"
+        + "\n\n"
+        + "\n".join(lineas_totales)
         + f"\n\n(Me falta que me digas {', '.join(faltantes)} para continuar)."
     )
     return f"{texto}\n\n{aviso_horario}" if aviso_horario else texto
 
 
-def _texto_para_confirmar(resueltos: ItemsResueltos, entrega: _DatosDeEntrega) -> str:
+def _texto_para_confirmar(
+    resueltos: ItemsResueltos,
+    entrega: _DatosDeEntrega,
+    cupon_aplicado: str | None = None,
+    cupon_pct: int | None = None,
+    cupon_ahorro: Decimal | None = None,
+    total_final: Decimal | None = None,
+) -> str:
+    lineas_totales = _bloque_de_totales(
+        resueltos.total, cupon_aplicado, cupon_pct, cupon_ahorro, total_final, con_icono=True
+    )
     return "\n".join(
         [
             "📝 Resumen de tu pedido",
             "",
             "🛒 Productos:",
             *_bloque_de_productos(resueltos),
-            f"💰 Total: ${resueltos.total:,.2f}",
+            *lineas_totales,
             "",
             "🚚 Entrega:",
             *entrega.lineas(),
@@ -1103,11 +1144,22 @@ def _texto_para_confirmar(resueltos: ItemsResueltos, entrega: _DatosDeEntrega) -
 
 
 def _mensaje_para_el_cliente(
-    resueltos: ItemsResueltos, faltantes: list[str], aviso_horario: str | None, entrega: _DatosDeEntrega
+    resueltos: ItemsResueltos,
+    faltantes: list[str],
+    aviso_horario: str | None,
+    entrega: _DatosDeEntrega,
+    cupon_aplicado: str | None = None,
+    cupon_pct: int | None = None,
+    cupon_ahorro: Decimal | None = None,
+    total_final: Decimal | None = None,
 ) -> str:
     if faltantes:
-        return _texto_con_datos_faltantes(resueltos, faltantes, aviso_horario)
-    return aviso_horario or _texto_para_confirmar(resueltos, entrega)
+        return _texto_con_datos_faltantes(
+            resueltos, faltantes, aviso_horario, cupon_aplicado, cupon_pct, cupon_ahorro, total_final
+        )
+    return aviso_horario or _texto_para_confirmar(
+        resueltos, entrega, cupon_aplicado, cupon_pct, cupon_ahorro, total_final
+    )
 
 
 def _datos_temporales(
@@ -1116,12 +1168,15 @@ def _datos_temporales(
     metodo_entrega: str | None,
     faltantes: list[str],
     aviso_horario: str | None,
+    total_final: Decimal | None = None,
+    cupon_aplicado: str | None = None,
 ) -> dict:
     """Los datos del pedido que se le devuelven al modelo para que los use al confirmarlo."""
     horario = entrega.horario
+    total = float(total_final if total_final is not None else resueltos.total)
     return {
         "items": resueltos.validados,
-        "total": float(resueltos.total),
+        "total": total,
         "cliente": entrega.cliente,
         "telefono": entrega.telefono or None,
         "direccion": PICKUP_ADDRESS if entrega.es_retiro else entrega.direccion,
@@ -1131,6 +1186,7 @@ def _datos_temporales(
         "observaciones": entrega.observaciones,
         "metodo_pago": entrega.metodo_pago,
         "faltan_datos": bool(faltantes) or aviso_horario is not None,
+        "cupon": cupon_aplicado,
     }
 
 
@@ -1145,6 +1201,7 @@ def calcular_y_preparar_pedido(
     dia_programado: str | None = None,
     observaciones: str | None = None,
     metodo_pago: str | None = None,
+    cupon: str | None = None,
 ) -> str:
     """Calcula de forma exacta el total de un pedido consultando los precios reales.
 
@@ -1168,12 +1225,30 @@ def calcular_y_preparar_pedido(
             haya mencionado en cualquier momento de la conversación, aunque no se la hayas preguntado.
         metodo_pago: "efectivo", "transferencia", "tarjeta" o "mercadopago" (solo los que ofrece el local). Si el
             cliente indicó cómo desea abonar, pasalo acá.
+        cupon: Código de cupón de descuento provisto por el cliente (ej: "PROMOVERANO").
     """
     db = SessionLocal()
     try:
         resueltos = resolver_items(db, items_solicitados)
         if not resueltos.validados:
             return resueltos.mensaje_sin_items()
+
+        cupon_aplicado: str | None = None
+        cupon_pct: int | None = None
+        cupon_ahorro: Decimal | None = None
+        total_con_descuento: Decimal = resueltos.total
+        aviso_cupon: str | None = None
+
+        if cupon and cupon.strip():
+            codigo_cupon = cupon.strip().upper()
+            c_res = coupon_service.validate_web_coupon(db, codigo_cupon)
+            if c_res.valid:
+                cupon_aplicado = c_res.code
+                cupon_pct = c_res.discount_percentage
+                cupon_ahorro = round(resueltos.total * Decimal(str(cupon_pct)) / Decimal("100"), 2)
+                total_con_descuento = max(Decimal("0.00"), resueltos.total - cupon_ahorro)
+            else:
+                aviso_cupon = "⚠️ El cupón ingresado no es válido."
 
         nombre = _recortar(customer_name, MAX_LARGO_CLIENTE)
         direccion = _recortar(shipping_address, MAX_LARGO_DIRECCION)
@@ -1197,10 +1272,29 @@ def calcular_y_preparar_pedido(
             metodo_pago=metodo,
             opciones_pago=_texto_de_opciones(opciones),
         )
-        datos_temporales = _datos_temporales(resueltos, entrega, metodo_entrega, faltantes, aviso_horario)
-        mensaje = _mensaje_para_el_cliente(resueltos, faltantes, aviso_horario, entrega)
-        if aviso_pago:
-            mensaje = "\n\n".join([aviso_pago, mensaje])
+        datos_temporales = _datos_temporales(
+            resueltos,
+            entrega,
+            metodo_entrega,
+            faltantes,
+            aviso_horario,
+            total_final=total_con_descuento,
+            cupon_aplicado=cupon_aplicado,
+        )
+        mensaje = _mensaje_para_el_cliente(
+            resueltos,
+            faltantes,
+            aviso_horario,
+            entrega,
+            cupon_aplicado=cupon_aplicado,
+            cupon_pct=cupon_pct,
+            cupon_ahorro=cupon_ahorro,
+            total_final=total_con_descuento,
+        )
+        partes_extra = [aviso_cupon, aviso_pago]
+        partes_activas = [p for p in partes_extra if p]
+        if partes_activas:
+            mensaje = "\n\n".join([*partes_activas, mensaje])
         return json.dumps({"mensaje_para_usuario": mensaje, "datos_temporales": datos_temporales}, ensure_ascii=False)
     except Exception as e:
         logger.exception("Error procesando el cálculo del pedido. items_solicitados=%s", items_solicitados)
@@ -1313,6 +1407,7 @@ def _registrar_pedido_confirmado(db: Session, datos: dict, canal: Channel | None
         notes=_limpiar_observaciones(datos.get("observaciones") or datos.get("notes")),
         items=items,
     )
+    cupon = datos.get("cupon") or datos.get("coupon_code")
     # Mismas reglas que los pedidos de la web y del mostrador (disponibilidad, máximo por producto, precios).
     try:
         guardado = create_bot_order(
@@ -1322,8 +1417,9 @@ def _registrar_pedido_confirmado(db: Session, datos: dict, canal: Channel | None
             chat_id=chat_id if canal else None,
             scheduled_for=programado.astimezone(timezone.utc) if programado else None,
             payment_method=metodo_pago,
+            coupon_code=cupon,
         )
-    except InvalidOrderError as exc:
+    except (InvalidOrderError, BusinessRuleError) as exc:
         return f"El pedido NO se registró todavía. {exc}"
     _imprimir_comanda(db, guardado)
     instrucciones = _instrucciones_de_pago(db, guardado) if metodo_pago == PaymentMethod.MERCADOPAGO.value else None
