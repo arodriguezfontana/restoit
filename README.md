@@ -21,6 +21,9 @@ Plataforma de gestión de locales gastronomicos unificada e inteligente que auto
 - Backend: https://github.com/arodriguezfontana/tip/tree/dev/backend
 - Frontend: https://github.com/arodriguezfontana/tip/tree/dev/frontend
 - Trello: https://trello.com/b/PkdE2JgS/ttip-poc
+- Presentaciones:
+    * [POC](https://github.com/user-attachments/files/35550851/POC.pdf)
+    * [Final](https://github.com/user-attachments/files/35550883/Presentacion.Final.pdf)
 - Entregas:
     * [PoC](https://github.com/arodriguezfontana/tip/wiki/PoC)
     * [Entrega 1](https://github.com/arodriguezfontana/tip/wiki/Entrega-1)
@@ -28,6 +31,7 @@ Plataforma de gestión de locales gastronomicos unificada e inteligente que auto
     * [Entrega 3](https://github.com/arodriguezfontana/tip/wiki/Entrega-3)
     * [Entrega 4](https://github.com/arodriguezfontana/tip/wiki/Entrega-4)
 - Demo:
+- Deploy:
 
 ### Elevator Pitch
 Para dueños de locales gastronómicos independientes que pierden ventas y tiempo valioso gestionando pedidos de forma manual por WhatsApp y llamadas, RestoIT es una plataforma centralizada de gestión y automatización impulsada por IA que unifica los canales de venta online y conversacionales, eliminando los errores de cobro mediante cálculos deterministas en base de datos y organizando automáticamente las comandas por sectores de preparación. A diferencia de los sistemas tradicionales de delivery que cobran comisiones abusivas por cada venta o de los chatbots genéricos que no se conectan con el inventario real, nuestro proyecto combina un asistente conversacional inteligente con un panel administrativo y analítico en tiempo real, permitiendo al comerciante automatizar la atención 24/7, reducir costos operativos y escalar su rentabilidad sin necesidad de incrementar su personal.
